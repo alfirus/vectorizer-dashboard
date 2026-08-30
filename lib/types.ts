@@ -13,6 +13,7 @@ export interface Workspace {
   id: string;
   name: string;
   created_at: string;
+  document_count?: number;
 }
 
 export interface WorkspaceStats {
