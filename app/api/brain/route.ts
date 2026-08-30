@@ -1,5 +1,3 @@
-import { NextResponse } from "next/server";
-
 const VECTORIZER_URL = "http://localhost:8091";
 const LM_STUDIO_URL = "http://localhost:1234";
 const LM_STUDIO_KEY = process.env.LM_STUDIO_KEY || "";
@@ -34,6 +32,8 @@ async function getWorkspaceDocCounts(): Promise<Record<string, number>> {
   }
 }
 
+export const runtime = "nodejs";
+
 export async function POST(req: Request) {
   const { question, workspaceId } = await req.json();
 
@@ -50,9 +50,21 @@ export async function POST(req: Request) {
   }
 
   if (workspaces.length === 0) {
-    return NextResponse.json({
-      answer: "No data found in any workspace. Upload some documents first.",
-      sources: [],
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "sources", sources: [] })}\n\n`));
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "chunk", content: "No data found in any workspace. Upload some documents first." })}\n\n`));
+        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+        controller.close();
+      },
+    });
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      },
     });
   }
 
@@ -90,55 +102,139 @@ export async function POST(req: Request) {
   const context = topResults.map((r) => r.document).join("\n");
 
   if (!context) {
-    return NextResponse.json({
-      answer: "No relevant context found in your workspaces.",
-      sources: [],
-    });
-  }
-
-  // Call LM Studio
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 600_000);
-  try {
-    const res = await fetch(`${LM_STUDIO_URL}/v1/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${LM_STUDIO_KEY}`,
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "sources", sources: [] })}\n\n`));
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "chunk", content: "No relevant context found in your workspaces." })}\n\n`));
+        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+        controller.close();
       },
-      body: JSON.stringify({
-        model: "qwen3.6-35b-a3b-uncensored-hauhaucs-aggressive",
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are an assistant answering questions based on the provided memory context. Answer concisely and directly. Use only information from the context when possible. If the answer is not in the context, say so.",
-          },
-          {
-            role: "user",
-            content: `Context:\n${context}\n\nQuestion: ${question}`,
-          },
-        ],
-        temperature: 0.3,
-        max_tokens: 1024,
-      }),
-      signal: controller.signal,
     });
-    const data = await res.json();
-    const answer =
-      data?.choices?.[0]?.message?.content || "No answer returned.";
-
-    // Convert distance to score (1 = perfect match, 0 = unrelated)
-    const sources = topResults.map((r) => ({
-      content: r.document,
-      score: Math.max(0, 1 - r.distance),
-    }));
-
-    return NextResponse.json({ answer, sources });
-  } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : "LLM request failed";
-    return NextResponse.json({ error: msg }, { status: 500 });
-  } finally {
-    clearTimeout(timeout);
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      },
+    });
   }
+
+  // Convert distance to score (1 = perfect match, 0 = unrelated)
+  const sources = topResults.map((r) => ({
+    content: r.document,
+    score: Math.max(0, 1 - r.distance),
+  }));
+
+  // Call LM Studio with streaming
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    async start(controller) {
+      try {
+        // Send sources first so the client knows them immediately
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "sources", sources })}\n\n`));
+
+        const res = await fetch(`${LM_STUDIO_URL}/v1/chat/completions`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${LM_STUDIO_KEY}`,
+          },
+          body: JSON.stringify({
+            model: "qwen3.6-35b-a3b-uncensored-hauhaucs-aggressive",
+            messages: [
+              {
+                role: "system",
+                content:
+                  "You are an assistant answering questions based on the provided memory context. Answer concisely and directly. Use only information from the context when possible. If the answer is not in the context, say so.",
+              },
+              {
+                role: "user",
+                content: `Context:\n${context}\n\nQuestion: ${question}`,
+              },
+            ],
+            temperature: 0.3,
+            max_tokens: 1024,
+            stream: true,
+          }),
+        });
+
+        if (!res.ok) {
+          const errText = await res.text();
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "error", error: `LLM request failed: ${res.status} ${errText}` })}\n\n`));
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          controller.close();
+          return;
+        }
+
+        // Pipe the SSE stream from LM Studio to the client
+        const reader = res.body?.getReader();
+        if (!reader) {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "error", error: "No response body from LLM" })}\n\n`));
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          controller.close();
+          return;
+        }
+
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          // Keep the last incomplete line in the buffer
+          buffer = lines.pop() || "";
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+
+            if (trimmed.startsWith("data: ")) {
+              const payload = trimmed.slice(6);
+              if (payload === "[DONE]") {
+                controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+                continue;
+              }
+              try {
+                const parsed = JSON.parse(payload);
+                const delta = parsed.choices?.[0]?.delta?.content;
+                if (delta) {
+                  controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "chunk", content: delta })}\n\n`));
+                }
+              } catch {
+                // Skip malformed JSON chunks
+              }
+            }
+          }
+        }
+
+        // Flush remaining buffer
+        if (buffer.trim()) {
+          if (buffer.trim() === "data: [DONE]") {
+            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          }
+        }
+
+        // Ensure we send [DONE] if the upstream didn't
+        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+        controller.close();
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : "LLM request failed";
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "error", error: msg })}\n\n`));
+        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    },
+  });
 }

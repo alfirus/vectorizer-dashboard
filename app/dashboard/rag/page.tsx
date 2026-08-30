@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { brainAsk, getWorkspaces } from "@/lib/api";
+import { useEffect, useState, useRef } from "react";
+import { brainAskStream, getWorkspaces } from "@/lib/api";
+import type { BrainStreamEvent } from "@/lib/api";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -17,6 +18,7 @@ export default function RagPage() {
   const [workspace, setWorkspace] = useState("all");
   const [workspaces, setWorkspaces] = useState<{ id: string; name: string }[]>([]);
   const [loading, setLoading] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     getWorkspaces()
@@ -31,19 +33,69 @@ export default function RagPage() {
     setMessages((prev) => [...prev, { role: "user", content: q }]);
     setLoading(true);
 
+    // Add a placeholder assistant message that we'll update as chunks arrive
+    const assistantIdx = messages.length + 1; // +1 for the user msg we just pushed
+    setMessages((prev) => [
+      ...prev,
+      { role: "assistant", content: "", sources: [] },
+    ]);
+
     try {
       const ws = workspace === "all" ? undefined : workspace;
-      const res = await brainAsk(q, ws);
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: res.answer || "No answer returned.", sources: res.sources },
-      ]);
+      let answerText = "";
+      let sources: { content: string; score: number }[] = [];
+
+      for await (const event of brainAskStream(q, ws)) {
+        switch (event.type) {
+          case "sources":
+            sources = event.sources;
+            // Update sources on the assistant message immediately
+            setMessages((prev) => {
+              const updated = [...prev];
+              const msg = updated[assistantIdx];
+              if (msg) updated[assistantIdx] = { ...msg, sources };
+              return updated;
+            });
+            break;
+          case "chunk":
+            answerText += event.content;
+            // Update the assistant message content progressively
+            setMessages((prev) => {
+              const updated = [...prev];
+              const msg = updated[assistantIdx];
+              if (msg) updated[assistantIdx] = { ...msg, content: answerText };
+              return updated;
+            });
+            break;
+          case "error":
+            answerText = `Error: ${event.error}`;
+            setMessages((prev) => {
+              const updated = [...prev];
+              const msg = updated[assistantIdx];
+              if (msg) updated[assistantIdx] = { ...msg, content: answerText };
+              return updated;
+            });
+            break;
+        }
+      }
+
+      // If we got no content at all, show a fallback
+      if (!answerText) {
+        setMessages((prev) => {
+          const updated = [...prev];
+          const msg = updated[assistantIdx];
+          if (msg) updated[assistantIdx] = { ...msg, content: "No answer returned." };
+          return updated;
+        });
+      }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "Request failed";
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: `Error: ${msg}` },
-      ]);
+      setMessages((prev) => {
+        const updated = [...prev];
+        const target = updated[assistantIdx];
+        if (target) updated[assistantIdx] = { ...target, content: `Error: ${msg}` };
+        return updated;
+      });
     } finally {
       setLoading(false);
     }
@@ -54,8 +106,7 @@ export default function RagPage() {
       <div className="mb-4">
         <h1 className="text-2xl font-bold">RAG Q&A</h1>
         <p className="text-sm text-muted">
-          Ask questions — powered by LM Studio directly (can take several
-          minutes with large models).
+          Ask questions — powered by LM Studio directly (streaming responses).
         </p>
       </div>
 
@@ -99,9 +150,13 @@ export default function RagPage() {
             >
               {m.role === "assistant" ? (
                 <div className="prose prose-invert prose-sm max-w-none">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                    {m.content}
-                  </ReactMarkdown>
+                  {m.content ? (
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {m.content}
+                    </ReactMarkdown>
+                  ) : loading && i === messages.length - 1 ? (
+                    <span className="text-muted animate-pulse">Thinking…</span>
+                  ) : null}
                   {m.sources && m.sources.length > 0 && (
                     <div className="mt-3 pt-2 border-t border-border/50">
                       <p className="text-xs text-muted mb-1">Sources:</p>
@@ -119,13 +174,6 @@ export default function RagPage() {
             </div>
           </div>
         ))}
-        {loading && (
-          <div className="flex justify-start">
-            <div className="bg-surface-hover border border-border rounded-lg px-4 py-2 text-sm text-muted animate-pulse">
-              Thinking…
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Input */}

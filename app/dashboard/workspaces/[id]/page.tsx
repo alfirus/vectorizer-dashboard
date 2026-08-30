@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
-import { getMessages } from "@/lib/api";
+import { getMessages, addMessage } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -21,7 +21,12 @@ export default function WorkspaceDetailPage() {
   const [sessions, setSessions] = useState<string[]>([]);
   const [activeSession, setActiveSession] = useState<string>("");
 
-  useEffect(() => {
+  // Bulk import state
+  const [dragging, setDragging] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState("");
+
+  const loadMessages = useCallback(() => {
     getMessages(id)
       .then((r) => {
         const msgs = r.messages || r || [];
@@ -35,15 +40,90 @@ export default function WorkspaceDetailPage() {
       .finally(() => setLoading(false));
   }, [id]);
 
+  useEffect(() => {
+    loadMessages();
+  }, [loadMessages]);
+
   const filtered = activeSession
     ? messages.filter((m) => m.session_id === activeSession)
     : messages;
+
+  const handleFiles = async (files: FileList | File[]) => {
+    const accepted = [".md", ".txt", ".json"];
+    const fileArray = Array.from(files).filter((f) =>
+      accepted.some((ext) => f.name.toLowerCase().endsWith(ext))
+    );
+    if (fileArray.length === 0) {
+      alert("No accepted files. Use .md, .txt, or .json files.");
+      return;
+    }
+    setImporting(true);
+    try {
+      for (let i = 0; i < fileArray.length; i++) {
+        const file = fileArray[i];
+        setImportProgress(`Importing ${i + 1}/${fileArray.length}: ${file.name}`);
+        const content = await file.text();
+        await addMessage(id, "import", "system", content);
+      }
+      setImportProgress(`Done! Imported ${fileArray.length} file(s).`);
+      loadMessages();
+    } catch (err) {
+      console.error(err);
+      setImportProgress("Import failed. Check console for details.");
+    } finally {
+      setTimeout(() => {
+        setImporting(false);
+        setImportProgress("");
+      }, 2000);
+    }
+  };
+
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragging(false);
+    handleFiles(e.dataTransfer.files);
+  };
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold font-mono">{id}</h1>
         <p className="text-sm text-muted">{messages.length} messages</p>
+      </div>
+
+      {/* Bulk Import Zone */}
+      <div
+        onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={onDrop}
+        className={cn(
+          "border-2 border-dashed rounded-lg p-6 text-center transition-colors",
+          dragging
+            ? "border-primary bg-primary/10"
+            : "border-border hover:border-primary/40"
+        )}
+      >
+        <div className="space-y-2">
+          <p className="text-sm text-muted">
+            📁 Drag & drop files here or{" "}
+            <label className="text-primary cursor-pointer hover:underline">
+              browse
+              <input
+                type="file"
+                multiple
+                accept=".md,.txt,.json"
+                className="hidden"
+                onChange={(e) => e.target.files && handleFiles(e.target.files)}
+              />
+            </label>
+          </p>
+          <p className="text-xs text-muted/60">
+            Accepts .md, .txt, .json — imported as system messages
+          </p>
+        </div>
+        {importing && importProgress && (
+          <p className="mt-3 text-sm text-primary font-medium">{importProgress}</p>
+        )}
       </div>
 
       {sessions.length > 0 && (

@@ -103,6 +103,83 @@ export async function searchMessages(
   return res.json();
 }
 
+// ---- Streaming brain API ----
+
+/** SSE event types returned by /api/brain */
+export type BrainStreamEvent =
+  | { type: "sources"; sources: { content: string; score: number }[] }
+  | { type: "chunk"; content: string }
+  | { type: "error"; error: string };
+
+/**
+ * Stream brain answer via SSE. Yields parsed events as they arrive.
+ * Usage:
+ *   for await (const event of brainAskStream(question, workspaceId)) {
+ *     if (event.type === "chunk") appendText(event.content);
+ *     if (event.type === "sources") setSources(event.sources);
+ *   }
+ */
+export async function* brainAskStream(
+  question: string,
+  workspaceId?: string
+): AsyncGenerator<BrainStreamEvent> {
+  const res = await fetch("/api/brain", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question, workspaceId }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Request failed" }));
+    throw new Error(err.error || "Brain request failed");
+  }
+
+  const reader = res.body?.getReader();
+  if (!reader) throw new Error("No response body");
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || !trimmed.startsWith("data: ")) continue;
+      const payload = trimmed.slice(6);
+      if (payload === "[DONE]") return;
+      try {
+        const parsed = JSON.parse(payload) as BrainStreamEvent;
+        yield parsed;
+      } catch {
+        // skip malformed
+      }
+    }
+  }
+
+  // Flush remaining
+  if (buffer.trim()) {
+    const trimmed = buffer.trim();
+    if (trimmed.startsWith("data: ")) {
+      const payload = trimmed.slice(6);
+      if (payload !== "[DONE]") {
+        try {
+          const parsed = JSON.parse(payload) as BrainStreamEvent;
+          yield parsed;
+        } catch { /* skip */ }
+      }
+    }
+  }
+}
+
+/**
+ * Non-streaming brain API (kept for backward compatibility).
+ */
 export async function brainAsk(
   question: string,
   workspaceId?: string
@@ -117,6 +194,38 @@ export async function brainAsk(
     throw new Error(err.error || "Brain request failed");
   }
   return res.json();
+}
+
+export async function createWorkspace(name: string): Promise<{ workspace: Workspace }> {
+  const res = await fetch(`${VECTORIZER_URL}/api/v1/workspaces`, {
+    method: "POST",
+    headers: vHeaders,
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) throw new Error(`Create workspace failed: ${res.status}`);
+  return res.json();
+}
+
+export async function deleteWorkspace(id: string): Promise<void> {
+  const res = await fetch(`${VECTORIZER_URL}/api/v1/workspaces/${id}`, {
+    method: "DELETE",
+    headers: vHeaders,
+  });
+  if (!res.ok) throw new Error(`Delete workspace failed: ${res.status}`);
+}
+
+export async function addMessage(
+  workspaceId: string,
+  sessionId: string,
+  role: "user" | "assistant" | "system",
+  content: string
+): Promise<void> {
+  const res = await fetch(`${VECTORIZER_URL}/api/v1/messages`, {
+    method: "POST",
+    headers: vHeaders,
+    body: JSON.stringify({ workspace_id: workspaceId, session_id: sessionId, role, content }),
+  });
+  if (!res.ok) throw new Error(`Add message failed: ${res.status}`);
 }
 
 export async function getCollections(): Promise<ChromaCollection[]> {
