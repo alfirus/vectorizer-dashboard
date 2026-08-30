@@ -94,9 +94,9 @@ export async function searchMessages(
 
 export async function brainAsk(
   question: string,
-  workspaceId: string
+  workspaceId?: string
 ): Promise<BrainResponse> {
-  // Step 1: Get context from Vectorizer search
+  // Step 1: Get context from Vectorizer search (no workspace = search all)
   const searchRes = await searchMessages(question, workspaceId, 5);
   const context = (searchRes.results || [])
     .map((r) => r.document)

@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { brainAsk } from "@/lib/api";
+import { useEffect, useState } from "react";
+import { brainAsk, getWorkspaces } from "@/lib/api";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -14,8 +14,15 @@ interface ChatMsg {
 export default function RagPage() {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
-  const [workspace, setWorkspace] = useState("family");
+  const [workspace, setWorkspace] = useState("all");
+  const [workspaces, setWorkspaces] = useState<{ id: string; name: string }[]>([]);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    getWorkspaces()
+      .then((r) => setWorkspaces(r.workspaces || []))
+      .catch(console.error);
+  }, []);
 
   const handleAsk = async () => {
     if (!input.trim() || loading) return;
@@ -25,7 +32,8 @@ export default function RagPage() {
     setLoading(true);
 
     try {
-      const res = await brainAsk(q, workspace);
+      const ws = workspace === "all" ? undefined : workspace;
+      const res = await brainAsk(q, ws);
       setMessages((prev) => [
         ...prev,
         { role: "assistant", content: res.answer || "No answer returned.", sources: res.sources },
@@ -46,20 +54,26 @@ export default function RagPage() {
       <div className="mb-4">
         <h1 className="text-2xl font-bold">RAG Q&A</h1>
         <p className="text-sm text-muted">
-          Ask questions — powered by Vectorizer&apos;s LLM brain (can take
-          several minutes with large models).
+          Ask questions — powered by LM Studio directly (can take several
+          minutes with large models).
         </p>
       </div>
 
       {/* Workspace selector */}
       <div className="mb-3 flex items-center gap-2 text-sm">
         <label className="text-muted">Workspace:</label>
-        <input
-          type="text"
+        <select
           value={workspace}
           onChange={(e) => setWorkspace(e.target.value)}
-          className="bg-surface border border-border rounded px-2 py-1 text-sm w-32 focus:outline-none focus:border-primary"
-        />
+          className="bg-surface border border-border rounded px-2 py-1 text-sm focus:outline-none focus:border-primary"
+        >
+          <option value="all">All Workspaces</option>
+          {workspaces.map((ws) => (
+            <option key={ws.id} value={ws.id}>
+              {ws.name || ws.id}
+            </option>
+          ))}
+        </select>
       </div>
 
       {/* Chat messages */}
