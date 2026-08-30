@@ -57,17 +57,22 @@ export async function getMessages(
   limit = 50,
   offset = 0
 ) {
-  const params = new URLSearchParams({
-    workspace_id: workspaceId,
-    limit: String(limit),
-    offset: String(offset),
-  });
+  const params = new URLSearchParams({ workspace_id: workspaceId, limit: String(limit), offset: String(offset) });
   if (sessionId) params.set("session_id", sessionId);
-  const res = await fetch(
-    `${VECTORIZER_URL}/api/v1/messages?${params}`,
-    { headers: vHeaders }
-  );
-  return res.json();
+  const res = await fetch(`${VECTORIZER_URL}/api/v1/messages?${params}`, { headers: vHeaders });
+  const data = await res.json();
+  
+  // Normalize: API returns {document, metadata: {role, session_id, ...}}
+  const messages = (data.messages || []).map((m: Record<string, unknown>) => ({
+    id: m.id,
+    content: m.document || m.content,
+    role: (m.metadata as Record<string, string>)?.role || "unknown",
+    session_id: (m.metadata as Record<string, string>)?.session_id || "",
+    workspace_id: (m.metadata as Record<string, string>)?.workspace_id || workspaceId,
+    timestamp: (m.metadata as Record<string, string>)?.created_at,
+  }));
+  
+  return { count: data.count, messages };
 }
 
 export async function searchMessages(
