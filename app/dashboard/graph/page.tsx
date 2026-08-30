@@ -38,6 +38,12 @@ const TYPE_COLORS: Record<string, string> = {
   unknown: "#64748b",
 };
 
+const WORKSPACE_COLORS: Record<string, string> = {
+  family: "#8b5cf6",
+  sofia: "#ec4899",
+  maisarah: "#14b8a6",
+};
+
 const RELATION_COLORS: Record<string, string> = {
   mentions: "#334155",
   belongs_to: "#1e3a5f",
@@ -53,6 +59,8 @@ export default function GraphPage() {
   const [layoutNodes, setLayoutNodes] = useState<LayoutNode[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>("");
+  const [workspace, setWorkspace] = useState<string>("");
+  const [workspaces, setWorkspaces] = useState<string[]>([]);
   const alphaRef = useRef(1.0);
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
@@ -63,12 +71,15 @@ export default function GraphPage() {
   const layoutRef = useRef<LayoutNode[]>([]);
   const animRef = useRef<number>(0);
 
-  // Load graph data from a static JSON endpoint
+  // Load graph data with workspace filter
   useEffect(() => {
-    fetch("/api/graph")
+    setLoading(true);
+    const url = workspace ? `/api/graph?workspace=${workspace}` : "/api/graph";
+    fetch(url)
       .then((r) => r.json())
-      .then((data: GraphData) => {
+      .then((data: GraphData & { workspaces?: string[] }) => {
         setGraph(data);
+        if (data.workspaces) setWorkspaces(data.workspaces);
         // Initialize positions randomly
         const nodes: LayoutNode[] = data.nodes.map((n) => ({
           ...n,
@@ -86,7 +97,7 @@ export default function GraphPage() {
         console.error("Failed to load graph:", e);
         setLoading(false);
       });
-  }, []);
+  }, [workspace]);
 
   // Force-directed layout with cooling — self-contained animation loop
   useEffect(() => {
@@ -200,7 +211,10 @@ export default function GraphPage() {
     ctx.globalAlpha = 1;
     for (const node of layoutNodes) {
       if (filter && node.type !== filter) continue;
-      const color = TYPE_COLORS[node.type] || "#64748b";
+      // Use workspace color when viewing all, type color when filtered
+      const color = workspace 
+        ? (TYPE_COLORS[node.type] || "#64748b")
+        : (WORKSPACE_COLORS[(node as unknown as Record<string, string>).workspace] || TYPE_COLORS[node.type] || "#64748b");
       const isHovered = hoveredNode === node.id;
       const isSelected = selectedNode === node.id;
       const r = node.type === "doc" ? 6 : node.type === "entity" ? 5 : node.type === "folder" ? 7 : 2.5;
@@ -327,14 +341,46 @@ export default function GraphPage() {
           <option value="folder">Folders</option>
         </select>
 
+        <div className="flex items-center gap-2 ml-4">
+          <label className="text-sm text-muted">Workspace:</label>
+          <div className="flex gap-1">
+            <button
+              onClick={() => setWorkspace("")}
+              className={`px-2 py-1 text-xs rounded ${!workspace ? "bg-primary text-white" : "bg-surface border border-border text-muted hover:text-white"}`}
+            >
+              All
+            </button>
+            {workspaces.map((ws) => (
+              <button
+                key={ws}
+                onClick={() => setWorkspace(ws)}
+                className={`px-2 py-1 text-xs rounded capitalize ${workspace === ws ? "bg-primary text-white" : "bg-surface border border-border text-muted hover:text-white"}`}
+              >
+                {ws}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div className="flex gap-2 ml-4">
-          {Object.entries(TYPE_COLORS).filter(([k]) => k !== "unknown").map(([type, color]) => (
-            <div key={type} className="flex items-center gap-1 text-xs">
-              <span className="w-3 h-3 rounded-full" style={{ backgroundColor: color }} />
-              <span className="text-muted capitalize">{type}</span>
-              <span className="text-muted/50">({stats?.byType?.[type] || 0})</span>
-            </div>
-          ))}
+          {!workspace ? (
+            // Show workspace colors when viewing all
+            Object.entries(WORKSPACE_COLORS).map(([ws, color]) => (
+              <div key={ws} className="flex items-center gap-1 text-xs">
+                <span className="w-3 h-3 rounded-full" style={{ backgroundColor: color }} />
+                <span className="text-muted capitalize">{ws}</span>
+              </div>
+            ))
+          ) : (
+            // Show type colors when filtered to workspace
+            Object.entries(TYPE_COLORS).filter(([k]) => k !== "unknown").map(([type, color]) => (
+              <div key={type} className="flex items-center gap-1 text-xs">
+                <span className="w-3 h-3 rounded-full" style={{ backgroundColor: color }} />
+                <span className="text-muted capitalize">{type}</span>
+                <span className="text-muted/50">({stats?.byType?.[type] || 0})</span>
+              </div>
+            ))
+          )}
         </div>
 
         <span className="text-xs text-muted ml-auto">
