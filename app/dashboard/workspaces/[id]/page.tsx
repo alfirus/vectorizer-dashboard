@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { getMessages } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 interface Msg {
   role: string;
@@ -111,7 +112,7 @@ export default function WorkspaceDetailPage() {
                 </span>
               </div>
               <div className="prose prose-invert prose-sm max-w-none">
-                <ReactMarkdown>
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
                   {msg.content?.slice(0, 500) || ""}
                 </ReactMarkdown>
                 {(msg.content?.length || 0) > 500 && (
