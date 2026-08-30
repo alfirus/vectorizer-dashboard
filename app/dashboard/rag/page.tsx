@@ -106,7 +106,7 @@ export default function RagPage() {
                     <div className="mt-3 pt-2 border-t border-border/50">
                       <p className="text-xs text-muted mb-1">Sources:</p>
                       {m.sources.slice(0, 3).map((s, i) => (
-                        <p key={i} className="text-xs text-muted/70 line-clamp-1">
+                        <p key={i} className="text-xs text-muted/70 leading-none mb-0.5">
                           {s.content.slice(0, 100)}… ({(s.score * 100).toFixed(0)}%)
                         </p>
                       ))}
