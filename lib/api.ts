@@ -1,8 +1,8 @@
 import type {
   HealthResponse,
   Workspace,
-  WorkspaceStats,
   SearchResponse,
+  SearchResult,
   BrainResponse,
   ChromaCollection,
   ChromaGetResponse,
@@ -21,8 +21,6 @@ const vHeaders = {
   "X-API-Key": API_KEY,
 };
 
-// ── Vectorizer API ──────────────────────────────────────────────
-
 export async function getHealth(): Promise<HealthResponse> {
   const res = await fetch(`${VECTORIZER_URL}/api/v1/health`);
   return res.json();
@@ -33,24 +31,20 @@ export async function getWorkspaces(): Promise<{ workspaces: Workspace[] }> {
     headers: vHeaders,
   });
   const data = await res.json();
-  
-  // Workspace IDs are now the names (maisarah, sofia, family)
-  const workspaces = (data.workspaces || []).map((ws: Workspace) => ({
-    ...ws,
-    name: ws.id, // ID is the name
-  }));
-  
-  return { workspaces };
-}
 
-export async function getWorkspaceStats(
-  workspaceId: string
-): Promise<WorkspaceStats> {
-  const res = await fetch(
-    `${VECTORIZER_URL}/api/v1/workspaces/${workspaceId}/stats`,
-    { headers: vHeaders }
-  );
-  return res.json();
+  // Enrich with ChromaDB doc counts
+  try {
+    const collections = await getCollections();
+    const colMap: Record<string, number> = {};
+    for (const col of collections) {
+      colMap[col.name] = col.document_count || 0;
+    }
+    for (const ws of data.workspaces || []) {
+      ws.document_count = colMap[`ws_${ws.id}`] || 0;
+    }
+  } catch { /* ignore */ }
+
+  return data;
 }
 
 export async function getMessages(
@@ -63,7 +57,7 @@ export async function getMessages(
   if (sessionId) params.set("session_id", sessionId);
   const res = await fetch(`${VECTORIZER_URL}/api/v1/messages?${params}`, { headers: vHeaders });
   const data = await res.json();
-  
+
   // Normalize: API returns {document, metadata: {role, session_id, ...}}
   const messages = (data.messages || []).map((m: Record<string, unknown>) => ({
     id: m.id,
@@ -73,7 +67,7 @@ export async function getMessages(
     workspace_id: (m.metadata as Record<string, string>)?.workspace_id || workspaceId,
     timestamp: (m.metadata as Record<string, string>)?.created_at,
   }));
-  
+
   return { count: data.count, messages };
 }
 
@@ -82,8 +76,24 @@ export async function searchMessages(
   workspaceId?: string,
   nResults = 5
 ): Promise<SearchResponse> {
-  const where: Record<string, string> = {};
-  if (workspaceId) where.workspace_id = workspaceId;
+  // If no workspace specified, search all workspaces and merge results
+  if (!workspaceId) {
+    const workspaces = ["family", "sofia", "maisarah"];
+    const allResults: SearchResult[] = [];
+    for (const ws of workspaces) {
+      const res = await fetch(`${VECTORIZER_URL}/api/v1/messages/search`, {
+        method: "POST",
+        headers: vHeaders,
+        body: JSON.stringify({ query, n_results: nResults, where: { workspace_id: ws } }),
+      });
+      const data = await res.json();
+      if (data.results) allResults.push(...data.results);
+    }
+    // Sort by distance (lower = more relevant)
+    allResults.sort((a, b) => (a.distance || 0) - (b.distance || 0));
+    return { count: allResults.length, results: allResults.slice(0, nResults) };
+  }
+  const where: Record<string, string> = { workspace_id: workspaceId };
   const res = await fetch(`${VECTORIZER_URL}/api/v1/messages/search`, {
     method: "POST",
     headers: vHeaders,
@@ -141,8 +151,6 @@ export async function brainAsk(
     clearTimeout(timeout);
   }
 }
-
-// ── ChromaDB API (direct, for raw vectors) ─────────────────────
 
 export async function getCollections(): Promise<ChromaCollection[]> {
   const res = await fetch(

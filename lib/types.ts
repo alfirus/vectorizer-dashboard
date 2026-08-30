@@ -32,6 +32,7 @@ export interface Message {
 export interface SearchResult {
   id: string;
   score: number;
+  distance?: number;
   document: string;
   metadata: Record<string, unknown>;
 }
@@ -55,6 +56,9 @@ export interface ChromaCollection {
   dimension: number | null;
   tenant: string;
   database: string;
+  document_count?: number;
+  log_position?: number;
+  version?: number;
 }
 
 export interface ChromaGetResponse {
