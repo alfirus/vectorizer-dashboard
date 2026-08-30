@@ -2,10 +2,13 @@
 
 import { useState } from "react";
 import { brainAsk } from "@/lib/api";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 interface ChatMsg {
   role: "user" | "assistant";
   content: string;
+  sources?: { content: string; score: number }[];
 }
 
 export default function RagPage() {
@@ -25,7 +28,7 @@ export default function RagPage() {
       const res = await brainAsk(q, workspace);
       setMessages((prev) => [
         ...prev,
-        { role: "assistant", content: res.answer || "No answer returned." },
+        { role: "assistant", content: res.answer || "No answer returned.", sources: res.sources },
       ]);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "Request failed";
@@ -74,13 +77,31 @@ export default function RagPage() {
             }`}
           >
             <div
-              className={`max-w-[80%] rounded-lg px-4 py-2 text-sm whitespace-pre-wrap ${
+              className={`max-w-[80%] rounded-lg px-4 py-2 text-sm ${
                 m.role === "user"
                   ? "bg-primary/20 text-foreground"
                   : "bg-surface-hover text-foreground border border-border"
               }`}
             >
-              {m.content}
+              {m.role === "assistant" ? (
+                <div className="prose prose-invert prose-sm max-w-none">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {m.content}
+                  </ReactMarkdown>
+                  {m.sources && m.sources.length > 0 && (
+                    <div className="mt-3 pt-2 border-t border-border/50">
+                      <p className="text-xs text-muted mb-1">Sources:</p>
+                      {m.sources.slice(0, 3).map((s, i) => (
+                        <p key={i} className="text-xs text-muted/70 line-clamp-1">
+                          {s.content.slice(0, 100)}… ({(s.score * 100).toFixed(0)}%)
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                m.content
+              )}
             </div>
           </div>
         ))}
