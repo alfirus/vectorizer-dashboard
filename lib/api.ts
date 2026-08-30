@@ -79,17 +79,15 @@ export async function getMessages(
 
 export async function searchMessages(
   query: string,
-  workspaceId: string,
-  nResults = 10
+  workspaceId?: string,
+  nResults = 5
 ): Promise<SearchResponse> {
+  const where: Record<string, string> = {};
+  if (workspaceId) where.workspace_id = workspaceId;
   const res = await fetch(`${VECTORIZER_URL}/api/v1/messages/search`, {
     method: "POST",
     headers: vHeaders,
-    body: JSON.stringify({
-      query,
-      workspace_id: workspaceId,
-      n_results: nResults,
-    }),
+    body: JSON.stringify({ query, n_results: nResults, where }),
   });
   return res.json();
 }
