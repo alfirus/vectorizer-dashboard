@@ -76,20 +76,21 @@ export async function searchMessages(
   workspaceId?: string,
   nResults = 5
 ): Promise<SearchResponse> {
-  // If no workspace specified, search all workspaces and merge results
+  // If no workspace specified, search all workspaces in parallel
   if (!workspaceId) {
     const workspaces = ["family", "sofia", "maisarah"];
-    const allResults: SearchResult[] = [];
-    for (const ws of workspaces) {
-      const res = await fetch(`${VECTORIZER_URL}/api/v1/messages/search`, {
+    const searchPromises = workspaces.map((ws) =>
+      fetch(`${VECTORIZER_URL}/api/v1/messages/search`, {
         method: "POST",
         headers: vHeaders,
         body: JSON.stringify({ query, n_results: nResults, where: { workspace_id: ws } }),
-      });
-      const data = await res.json();
+      }).then((r) => r.json())
+    );
+    const results = await Promise.all(searchPromises);
+    const allResults: SearchResult[] = [];
+    for (const data of results) {
       if (data.results) allResults.push(...data.results);
     }
-    // Sort by distance (lower = more relevant)
     allResults.sort((a, b) => (a.distance || 0) - (b.distance || 0));
     return { count: allResults.length, results: allResults.slice(0, nResults) };
   }

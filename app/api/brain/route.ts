@@ -10,17 +10,55 @@ const vHeaders = {
   "X-API-Key": API_KEY,
 };
 
+// Workspace doc counts (cached, refreshed every 5 min)
+let workspaceCache: Record<string, number> = {};
+let cacheTime = 0;
+const CACHE_TTL = 5 * 60 * 1000;
+
+async function getWorkspaceDocCounts(): Promise<Record<string, number>> {
+  if (Date.now() - cacheTime < CACHE_TTL && Object.keys(workspaceCache).length > 0) {
+    return workspaceCache;
+  }
+  try {
+    const res = await fetch(`${VECTORIZER_URL}/api/v1/workspaces`, { headers: vHeaders });
+    const data = await res.json();
+    const counts: Record<string, number> = {};
+    for (const ws of data.workspaces || []) {
+      counts[ws.id] = ws.document_count || 0;
+    }
+    workspaceCache = counts;
+    cacheTime = Date.now();
+    return counts;
+  } catch {
+    return workspaceCache; // return stale cache on error
+  }
+}
+
 export async function POST(req: Request) {
   const { question, workspaceId } = await req.json();
 
-  // Step 1: Search Vectorizer for context
-  const workspaces = workspaceId
-    ? [workspaceId]
-    : ["family", "sofia", "maisarah"];
-  const allResults: { document: string; distance?: number }[] = [];
+  // Determine which workspaces to search
+  let workspaces: string[];
+  if (workspaceId) {
+    workspaces = [workspaceId];
+  } else {
+    const counts = await getWorkspaceDocCounts();
+    // Only search workspaces that have documents
+    workspaces = Object.entries(counts)
+      .filter(([_, count]) => count > 0)
+      .map(([id]) => id);
+  }
 
-  for (const ws of workspaces) {
-    const res = await fetch(`${VECTORIZER_URL}/api/v1/messages/search`, {
+  if (workspaces.length === 0) {
+    return NextResponse.json({
+      answer: "No data found in any workspace. Upload some documents first.",
+      sources: [],
+    });
+  }
+
+  // Search all workspaces in parallel
+  const searchPromises = workspaces.map((ws) =>
+    fetch(`${VECTORIZER_URL}/api/v1/messages/search`, {
       method: "POST",
       headers: vHeaders,
       body: JSON.stringify({
@@ -28,12 +66,26 @@ export async function POST(req: Request) {
         n_results: 5,
         where: { workspace_id: ws },
       }),
-    });
-    const data = await res.json();
-    if (data.results) allResults.push(...data.results);
+    }).then((r) => r.json())
+  );
+
+  const results = await Promise.all(searchPromises);
+
+  // Merge and sort by relevance (lower distance = more relevant)
+  const allResults: { document: string; distance: number; workspace_id: string }[] = [];
+  for (let i = 0; i < results.length; i++) {
+    if (results[i].results) {
+      for (const r of results[i].results) {
+        allResults.push({
+          document: r.document,
+          distance: r.distance || 1,
+          workspace_id: workspaces[i],
+        });
+      }
+    }
   }
 
-  allResults.sort((a, b) => (a.distance || 0) - (b.distance || 0));
+  allResults.sort((a, b) => a.distance - b.distance);
   const topResults = allResults.slice(0, 5);
   const context = topResults.map((r) => r.document).join("\n");
 
@@ -44,7 +96,7 @@ export async function POST(req: Request) {
     });
   }
 
-  // Step 2: Call LM Studio directly
+  // Call LM Studio
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 600_000);
   try {
@@ -75,10 +127,13 @@ export async function POST(req: Request) {
     const data = await res.json();
     const answer =
       data?.choices?.[0]?.message?.content || "No answer returned.";
+
+    // Convert distance to score (1 = perfect match, 0 = unrelated)
     const sources = topResults.map((r) => ({
       content: r.document,
-      score: r.distance || 0,
+      score: Math.max(0, 1 - r.distance),
     }));
+
     return NextResponse.json({ answer, sources });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : "LLM request failed";
