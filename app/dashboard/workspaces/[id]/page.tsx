@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { getMessages } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import ReactMarkdown from "react-markdown";
 
 interface Msg {
   role: string;
@@ -109,10 +110,14 @@ export default function WorkspaceDetailPage() {
                   {msg.session_id?.slice(0, 20)}
                 </span>
               </div>
-              <p className="text-sm whitespace-pre-wrap leading-relaxed">
-                {msg.content?.slice(0, 500)}
-                {(msg.content?.length || 0) > 500 && "…"}
-              </p>
+              <div className="prose prose-invert prose-sm max-w-none">
+                <ReactMarkdown>
+                  {msg.content?.slice(0, 500) || ""}
+                </ReactMarkdown>
+                {(msg.content?.length || 0) > 500 && (
+                  <span className="text-muted">…</span>
+                )}
+              </div>
             </div>
           ))}
         </div>
