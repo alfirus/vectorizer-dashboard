@@ -12,7 +12,7 @@ const VECTORIZER_URL = "http://localhost:8091";
 const CHROMA_URL = "http://localhost:8100";
 const LM_STUDIO_URL = "http://localhost:1234";
 const API_KEY = "vectorizer-local-key";
-const LM_STUDIO_KEY = "sk-lm-M5poAGT7x0H2W2Wdr6eFa9Ip8d8";
+const LM_STUDIO_KEY = process.env.NEXT_PUBLIC_LM_STUDIO_KEY || "";
 const CHROMA_TENANT = "default_tenant";
 const CHROMA_DB = "default_database";
 
@@ -106,50 +106,16 @@ export async function brainAsk(
   question: string,
   workspaceId?: string
 ): Promise<BrainResponse> {
-  // Step 1: Get context from Vectorizer search (no workspace = search all)
-  const searchRes = await searchMessages(question, workspaceId, 5);
-  const context = (searchRes.results || [])
-    .map((r) => r.document)
-    .join("\n");
-
-  // Step 2: Call LM Studio directly (Vectorizer brain timeout too short at 12s)
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 600_000); // 10 min
-  try {
-    const res = await fetch(`${LM_STUDIO_URL}/v1/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${LM_STUDIO_KEY}`,
-      },
-      body: JSON.stringify({
-        model: "qwen3.6-35b-a3b-uncensored-hauhaucs-aggressive",
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are an assistant answering questions based on the provided memory context. Use only information from the context when possible. If the answer is not in the context, say so.",
-          },
-          {
-            role: "user",
-            content: `Context:\n${context}\n\nQuestion: ${question}`,
-          },
-        ],
-        temperature: 0.3,
-        max_tokens: 1024,
-      }),
-      signal: controller.signal,
-    });
-    const data = await res.json();
-    const answer = data?.choices?.[0]?.message?.content || "No answer returned.";
-    const sources = (searchRes.results || []).map((r) => ({
-      content: r.document,
-      score: r.score,
-    }));
-    return { answer, sources };
-  } finally {
-    clearTimeout(timeout);
+  const res = await fetch(`/api/brain`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question, workspaceId }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Request failed" }));
+    throw new Error(err.error || "Brain request failed");
   }
+  return res.json();
 }
 
 export async function getCollections(): Promise<ChromaCollection[]> {
