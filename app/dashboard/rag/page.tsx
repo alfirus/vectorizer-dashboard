@@ -5,11 +5,30 @@ import { brainAskStream, getWorkspaces } from "@/lib/api";
 import type { BrainStreamEvent } from "@/lib/api";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { cn } from "@/lib/utils";
 
 interface ChatMsg {
   role: "user" | "assistant";
   content: string;
   sources?: { content: string; score: number }[];
+}
+
+interface QueryLog {
+  query: string;
+  workspace: string;
+  timestamp: number;
+  duration: number;
+  resultCount: number;
+}
+
+function logQuery(entry: QueryLog) {
+  try {
+    const existing = JSON.parse(localStorage.getItem("vectorizer_queries") || "[]");
+    existing.unshift(entry);
+    // Keep only last 200 queries
+    if (existing.length > 200) existing.length = 200;
+    localStorage.setItem("vectorizer_queries", JSON.stringify(existing));
+  } catch { /* ignore */ }
 }
 
 export default function RagPage() {
@@ -19,6 +38,11 @@ export default function RagPage() {
   const [workspaces, setWorkspaces] = useState<{ id: string; name: string }[]>([]);
   const [loading, setLoading] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+
+  // Context Preview state
+  const [previewOpen, setPreviewOpen] = useState(true);
+  const [previewSources, setPreviewSources] = useState<{ content: string; score: number }[]>([]);
+  const [previewQuery, setPreviewQuery] = useState("");
 
   useEffect(() => {
     getWorkspaces()
@@ -33,12 +57,19 @@ export default function RagPage() {
     setMessages((prev) => [...prev, { role: "user", content: q }]);
     setLoading(true);
 
+    // Show what query is being previewed
+    setPreviewQuery(q);
+    setPreviewSources([]);
+    setPreviewOpen(true);
+
     // Add a placeholder assistant message that we'll update as chunks arrive
     const assistantIdx = messages.length + 1; // +1 for the user msg we just pushed
     setMessages((prev) => [
       ...prev,
       { role: "assistant", content: "", sources: [] },
     ]);
+
+    const startTime = Date.now();
 
     try {
       const ws = workspace === "all" ? undefined : workspace;
@@ -56,6 +87,8 @@ export default function RagPage() {
               if (msg) updated[assistantIdx] = { ...msg, sources };
               return updated;
             });
+            // Also update the context preview panel
+            setPreviewSources(sources);
             break;
           case "chunk":
             answerText += event.content;
@@ -79,6 +112,16 @@ export default function RagPage() {
         }
       }
 
+      // Log query analytics
+      const duration = Date.now() - startTime;
+      logQuery({
+        query: q,
+        workspace: workspace,
+        timestamp: startTime,
+        duration,
+        resultCount: sources.length,
+      });
+
       // If we got no content at all, show a fallback
       if (!answerText) {
         setMessages((prev) => {
@@ -90,6 +133,14 @@ export default function RagPage() {
       }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "Request failed";
+      // Log the failed query too
+      logQuery({
+        query: q,
+        workspace: workspace,
+        timestamp: startTime,
+        duration: Date.now() - startTime,
+        resultCount: 0,
+      });
       setMessages((prev) => {
         const updated = [...prev];
         const target = updated[assistantIdx];
@@ -125,6 +176,76 @@ export default function RagPage() {
             </option>
           ))}
         </select>
+      </div>
+
+      {/* Context Preview Panel */}
+      <div className="mb-3 bg-surface border border-border rounded-lg overflow-hidden">
+        <button
+          onClick={() => setPreviewOpen(!previewOpen)}
+          className="w-full flex items-center justify-between px-4 py-2.5 text-sm hover:bg-surface-hover transition-colors"
+        >
+          <div className="flex items-center gap-2">
+            <span>📋</span>
+            <span className="font-medium text-foreground">Context Preview</span>
+            {previewSources.length > 0 && (
+              <span className="text-xs bg-primary/15 text-primary px-1.5 py-0.5 rounded-full">
+                {previewSources.length} chunks
+              </span>
+            )}
+            {loading && previewSources.length === 0 && (
+              <span className="text-xs text-muted animate-pulse">Searching…</span>
+            )}
+          </div>
+          <svg
+            className={cn(
+              "w-4 h-4 text-muted transition-transform",
+              previewOpen && "rotate-180"
+            )}
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+
+        {previewOpen && (
+          <div className="border-t border-border">
+            {previewSources.length === 0 ? (
+              <div className="px-4 py-6 text-center text-sm text-muted">
+                {loading
+                  ? "Waiting for search results from Vectorizer…"
+                  : "Send a question to see what context the LLM will receive."}
+              </div>
+            ) : (
+              <div className="px-4 py-3 space-y-2 max-h-60 overflow-y-auto">
+                {previewQuery && (
+                  <p className="text-xs text-muted mb-2">
+                    Query: <span className="text-foreground">{previewQuery}</span>
+                  </p>
+                )}
+                {previewSources.map((s, i) => (
+                  <div
+                    key={i}
+                    className="bg-surface-hover border border-border/50 rounded-md p-3 text-sm"
+                  >
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs font-medium text-primary">
+                        Chunk {i + 1}
+                      </span>
+                      <span className="text-xs text-muted">
+                        Score: {(s.score * 100).toFixed(0)}%
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted/80 leading-relaxed whitespace-pre-wrap">
+                      {s.content.length > 300 ? s.content.slice(0, 300) + "…" : s.content}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Chat messages */}
