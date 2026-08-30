@@ -30,7 +30,25 @@ export async function getWorkspaces(): Promise<{ workspaces: Workspace[] }> {
   const res = await fetch(`${VECTORIZER_URL}/api/v1/workspaces`, {
     headers: vHeaders,
   });
-  return res.json();
+  const data = await res.json();
+  
+  // Get ChromaDB collections to map UUIDs to names
+  const collections = await getCollections();
+  const nameMap: Record<string, string> = {};
+  for (const col of collections) {
+    if (col.name.startsWith("ws_")) {
+      const name = col.name.slice(3); // Remove "ws_" prefix
+      nameMap[col.id] = name;
+    }
+  }
+  
+  // Map workspace IDs to friendly names
+  const workspaces = (data.workspaces || []).map((ws: Workspace) => ({
+    ...ws,
+    name: nameMap[ws.id] || ws.name || ws.id,
+  }));
+  
+  return { workspaces };
 }
 
 export async function getWorkspaceStats(

@@ -75,7 +75,7 @@ export default function DashboardPage() {
                   key={ws.id}
                   className="flex items-center justify-between text-sm px-2 py-1 rounded bg-surface-hover"
                 >
-                  <span className="font-mono">{ws.id}</span>
+                  <span className="font-mono capitalize">{ws.name || ws.id}</span>
                   <span className="text-muted text-xs">
                     {ws.created_at !== "0001-01-01T00:00:00Z"
                       ? new Date(ws.created_at).toLocaleDateString()
