@@ -6,7 +6,7 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard, FolderKanban, Database, Search, MessageCircle,
-  Boxes, Share2, BarChart3, Menu, X, Zap
+  Boxes, Share2, BarChart3, Menu, X, Zap, Settings
 } from "lucide-react";
 
 const nav = [
@@ -18,6 +18,7 @@ const nav = [
   { href: "/dashboard/embeddings", label: "Embeddings", icon: Boxes },
   { href: "/dashboard/graph", label: "Graph", icon: Share2 },
   { href: "/dashboard/analytics", label: "Analytics", icon: BarChart3 },
+  { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];
 
 function Brand({ sm = false }: { sm?: boolean }) {
