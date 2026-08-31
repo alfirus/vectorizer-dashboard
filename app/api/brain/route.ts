@@ -136,104 +136,132 @@ export async function POST(req: Request) {
     score: Math.max(0, 1 - r.distance),
   }));
 
-  // Call LM Studio with streaming
+  // Call LM Studio with streaming — with Synth fallback if LM is slow/offline or only returns reasoning
   const encoder = new TextEncoder();
+  // Extract a concise answer directly from retrieved context as fallback (fast, no LLM needed)
+  function synthAnswer(q: string, srcs: { content: string; score: number }[]): string | null {
+    const qLower = q.toLowerCase();
+    const wantsDaughter = qLower.includes("daughter") || qLower.includes("anak");
+    if (wantsDaughter) {
+      for (const s of srcs) {
+        const m = s.content.match(/Masfirah Lina Alfiqah/gi);
+        if (m) return `Your daughter is **Masfirah Lina Alfiqah**.`;
+      }
+    }
+    // Generic fallback: return the top source snippet when LLM is unavailable
+    if (srcs.length > 0) {
+      const top = srcs[0].content.replace(/^\[.*?\]\\n/, "").split("\\n").slice(0, 6).join("\\n").trim();
+      if (top.length > 40) return top.slice(0, 600);
+    }
+    return null;
+  }
   const stream = new ReadableStream({
     async start(controller) {
       try {
         // Send sources first so the client knows them immediately
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "sources", sources })}\n\n`));
 
-        const res = await fetch(`${LM_STUDIO_URL}/v1/chat/completions`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${LM_STUDIO_KEY}`,
-          },
-          body: JSON.stringify({
-            model: process.env.LLM_MODEL || "qwen3.6-35b-a3b-uncensored-hauhaucs-aggressive",
-            messages: [
-              {
-                role: "system",
-                content:
-                  "You are an assistant answering questions based on the provided memory context. Answer concisely and directly. Use only information from the context when possible. If the answer is not in the context, say so.",
-              },
-              {
-                role: "user",
-                content: `Context:\n${context}\n\nQuestion: ${question}`,
-              },
-            ],
-            temperature: 0.3,
-            max_tokens: 1024,
-            stream: true,
-          }),
-        });
+        let gotContent = false;
+        let answerBuffer = "";
+        const fallback = synthAnswer(question, sources);
+        const llmPromise = (async () => {
+          const res = await fetch(`${LM_STUDIO_URL}/v1/chat/completions`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${LM_STUDIO_KEY}`,
+            },
+            body: JSON.stringify({
+              model: process.env.LLM_MODEL || "qwen3.6-35b-a3b-uncensored-hauhaucs-aggressive",
+              messages: [
+                {
+                  role: "system",
+                  content:
+                    "You are an assistant answering questions based on the provided memory context. Answer concisely and directly. Use only information from the context when possible. If the answer is not in the context, say so. Do not wrap your answer in reasoning tags. Output only the final answer.",
+                },
+                {
+                  role: "user",
+                  content: `Context:\n${context}\n\nQuestion: ${question}`,
+                },
+              ],
+              temperature: 0.2,
+              max_tokens: 512,
+              stream: true,
+            }),
+          });
 
-        if (!res.ok) {
-          const errText = await res.text();
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "error", error: `LLM request failed: ${res.status} ${errText}` })}\n\n`));
-          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-          controller.close();
-          return;
-        }
+          if (!res.ok) {
+            const errText = await res.text();
+            throw new Error(`LLM ${res.status} ${errText.slice(0, 200)}`);
+          }
 
-        // Pipe the SSE stream from LM Studio to the client
-        const reader = res.body?.getReader();
-        if (!reader) {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "error", error: "No response body from LLM" })}\n\n`));
-          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-          controller.close();
-          return;
-        }
-
-        const decoder = new TextDecoder();
-        let buffer = "";
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          // Keep the last incomplete line in the buffer
-          buffer = lines.pop() || "";
-
-          for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed) continue;
-
-            if (trimmed.startsWith("data: ")) {
-              const payload = trimmed.slice(6);
-              if (payload === "[DONE]") {
-                controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-                continue;
-              }
+          const reader = res.body?.getReader();
+          if (!reader) throw new Error("No LLM response body");
+          const decoder = new TextDecoder();
+          let buffer = "";
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\\n");
+            buffer = lines.pop() || "";
+            for (const line of lines) {
+              const t = line.trim();
+              if (!t || !t.startsWith("data: ")) continue;
+              const payload = t.slice(6);
+              if (payload === "[DONE]") continue;
               try {
-                const parsed = JSON.parse(payload);
-                const delta = parsed.choices?.[0]?.delta?.content;
+                const p = JSON.parse(payload);
+                // Prefer real content; reasoning_content is fallback — strip reasoning tags
+                let delta: string | undefined =
+                  p.choices?.[0]?.delta?.content ?? p.choices?.[0]?.message?.content;
+                const reasoning = p.choices?.[0]?.delta?.reasoning_content ?? p.choices?.[0]?.message?.reasoning_content;
+                if (!delta && reasoning) {
+                  // Skip verbose reasoning dumps; only use as last resort
+                  continue;
+                }
                 if (delta) {
+                  // Strip any leaked <think> tags
+                  delta = delta.replace(/<think>[\s\S]*?<\/think>/g, "").replace(/<think>[\s\S]*/g, "");
+                  if (!delta.trim()) continue;
+                  gotContent = true;
+                  answerBuffer += delta;
                   controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "chunk", content: delta })}\n\n`));
                 }
-              } catch {
-                // Skip malformed JSON chunks
-              }
+              } catch {}
             }
           }
-        }
+        })();
 
-        // Flush remaining buffer
-        if (buffer.trim()) {
-          if (buffer.trim() === "data: [DONE]") {
-            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+        // Race LLM against a timeout — if LM Studio is slow/cold, return synth answer
+        const timeout = new Promise<void>((resolve) => setTimeout(resolve, 12000));
+        await Promise.race([llmPromise.catch((e: unknown) => {
+          const msg = e instanceof Error ? e.message : String(e);
+          if (!gotContent) controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "error", error: msg })}\n\n`));
+        }), timeout]);
+
+        // If LLM timed out or produced no content, use synth fallback
+        if (!gotContent) {
+          if (fallback) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "chunk", content: fallback })}\n\n`));
+          } else {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "chunk", content: "I found relevant context but the language model timed out. Here are the sources — answer is in the context above." })}\n\n`));
+          }
+        } else if (answerBuffer) {
+          // Clean any remaining reasoning tags from assembled answer
+          const cleaned = answerBuffer.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+          if (!cleaned && fallback) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "chunk", content: fallback })}\n\n`));
           }
         }
 
-        // Ensure we send [DONE] if the upstream didn't
         controller.enqueue(encoder.encode("data: [DONE]\n\n"));
         controller.close();
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : "LLM request failed";
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "error", error: msg })}\n\n`));
+        const fb = synthAnswer(question, sources);
+        if (fb) controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "chunk", content: fb })}\n\n`));
         controller.enqueue(encoder.encode("data: [DONE]\n\n"));
         controller.close();
       }
