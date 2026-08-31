@@ -8,64 +8,74 @@ const vHeaders = {
   "X-API-Key": API_KEY,
 };
 
-// Workspace doc counts (cached, refreshed every 5 min)
-let workspaceCache: Record<string, number> = {};
-let cacheTime = 0;
-const CACHE_TTL = 5 * 60 * 1000;
-
-async function getWorkspaceDocCounts(): Promise<Record<string, number>> {
-  if (Date.now() - cacheTime < CACHE_TTL && Object.keys(workspaceCache).length > 0) {
-    return workspaceCache;
-  }
-  try {
-    const res = await fetch(`${VECTORIZER_URL}/api/v1/workspaces`, { headers: vHeaders });
-    const data = await res.json();
-    const counts: Record<string, number> = {};
-    for (const ws of data.workspaces || []) {
-      counts[ws.id] = ws.document_count || 0;
-    }
-    workspaceCache = counts;
-    cacheTime = Date.now();
-    return counts;
-  } catch {
-    return workspaceCache; // return stale cache on error
-  }
-}
-
 export const runtime = "nodejs";
 
 export async function POST(req: Request) {
   const { question, workspaceId, hybrid } = await req.json() as { question: string; workspaceId?: string; hybrid?: boolean };
 
   // Determine which workspaces to search
+  // Bug fix: GET /workspaces never returned document_count (just {id,name,created_at}),
+  // so the old getWorkspaceDocCounts() always saw 0 and short-circuited with
+  // "No data found in any workspace" even though Chroma had 1500+ docs.
+  // Now we try document_count first, then fall back to GET /workspaces/:id stats
+  // and finally just use the workspace list if stats also fail.
   let workspaces: string[];
   if (workspaceId) {
     workspaces = [workspaceId];
   } else {
-    const counts = await getWorkspaceDocCounts();
-    // Only search workspaces that have documents
-    workspaces = Object.entries(counts)
-      .filter(([_, count]) => count > 0)
-      .map(([id]) => id);
-  }
-
-  if (workspaces.length === 0) {
-    const encoder = new TextEncoder();
-    const stream = new ReadableStream({
-      start(controller) {
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "sources", sources: [] })}\n\n`));
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "chunk", content: "No data found in any workspace. Upload some documents first." })}\n\n`));
-        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-        controller.close();
-      },
-    });
-    return new Response(stream, {
-      headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        Connection: "keep-alive",
-      },
-    });
+    try {
+      const res = await fetch(`${VECTORIZER_URL}/api/v1/workspaces`, { headers: vHeaders });
+      const data = await res.json();
+      const ids: string[] = (data.workspaces || []).map((w: { id: string }) => w.id);
+      if (ids.length === 0) {
+        const enc = new TextEncoder();
+        const s = new ReadableStream({
+          start(c) {
+            c.enqueue(enc.encode(`data: ${JSON.stringify({ type: "sources", sources: [] })}\n\n`));
+            c.enqueue(enc.encode(`data: ${JSON.stringify({ type: "chunk", content: "No workspaces found. Create one first." })}\n\n`));
+            c.enqueue(enc.encode("data: [DONE]\n\n")); c.close();
+          },
+        });
+        return new Response(s, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" } });
+      }
+      // Try to filter to non-empty workspaces via stats, but don't block if stats fail
+      const statsResults = await Promise.allSettled(
+        ids.map((id) => fetch(`${VECTORIZER_URL}/api/v1/workspaces/${id}`, { headers: vHeaders }).then((r) => r.json()))
+      );
+      const nonEmpty: string[] = [];
+      let hadStats = false;
+      for (let i = 0; i < ids.length; i++) {
+        const r = statsResults[i];
+        if (r.status === "fulfilled") {
+          const v = r.value as { stats?: { document_count?: number }; document_count?: number };
+          const count = v.stats?.document_count ?? v.document_count;
+          if (typeof count === "number") {
+            hadStats = true;
+            if (count > 0) nonEmpty.push(ids[i]);
+            continue;
+          }
+        }
+        // If stats endpoint failed or has no count, keep the workspace (don't filter)
+        if (!hadStats) nonEmpty.push(ids[i]);
+      }
+      workspaces = hadStats ? nonEmpty : ids;
+      if (workspaces.length === 0) {
+        // All workspaces are empty according to stats — still let the LLM explain context is empty
+        // instead of the misleading "no data" message
+        const enc = new TextEncoder();
+        const s = new ReadableStream({
+          start(c) {
+            c.enqueue(enc.encode(`data: ${JSON.stringify({ type: "sources", sources: [] })}\n\n`));
+            c.enqueue(enc.encode(`data: ${JSON.stringify({ type: "chunk", content: "No documents found in any workspace yet. Try reindexing the vault or adding documents." })}\n\n`));
+            c.enqueue(enc.encode("data: [DONE]\n\n")); c.close();
+          },
+        });
+        return new Response(s, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" } });
+      }
+    } catch {
+      // Fallback: try known workspace names
+      workspaces = ["maisarah", "sofia", "family", "shiela"];
+    }
   }
 
   // Search all workspaces in parallel (hybrid flag forwarded as where.hybrid for BM25+RRF)
