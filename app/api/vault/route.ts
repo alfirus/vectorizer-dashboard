@@ -35,7 +35,7 @@ export async function GET(request: Request) {
       const raw = await readFile(MEMORY_INDEX_PATH, "utf-8");
       const idx = JSON.parse(raw);
       const files = idx.files || {};
-      const fileList: VaultFile[] = Object.entries(files).map(([p, v]: [string, Record<string, unknown>]) => ({
+      const fileList: VaultFile[] = Object.entries(files as Record<string, Record<string, unknown>>).map(([p, v]) => ({
         path: p,
         hash: String(v.hash || "").slice(0, 8),
         chunks: Number(v.chunks || 0),
@@ -72,8 +72,8 @@ export async function GET(request: Request) {
     const raw = await readFile(MEMORY_INDEX_PATH, "utf-8");
     const idx = JSON.parse(raw);
     const files = idx.files || {};
-    const allFiles: VaultFile[] = Object.entries(files)
-      .map(([p, v]: [string, Record<string, unknown>]) => ({
+    const allFiles: VaultFile[] = Object.entries(files as Record<string, Record<string, unknown>>)
+      .map(([p, v]) => ({
         path: String(p).replace(/\\/g, "/"),
         hash: String(v.hash || "").slice(0, 8),
         chunks: Number(v.chunks || 0),
