@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { searchMessages, getWorkspaces, grepMessages, temporalSearch } from "@/lib/api";
+import type { SearchResponse } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 interface Hit {
@@ -71,6 +72,10 @@ export default function SearchPage() {
       }
       if (mode !== "semantic" && mode !== "hybrid") setLatency(Math.round(performance.now() - t0));
       setResults((res.results || []) as Hit[]);
+      {
+        const v = (res as SearchResponse & { latency_ms?: number }).latency_ms || Math.round(performance.now() - t0);
+        try { const arr = JSON.parse(sessionStorage.getItem("search_latencies") || "[]"); arr.push(v); if (arr.length > 10) arr.shift(); sessionStorage.setItem("search_latencies", JSON.stringify(arr)); } catch {}
+      }
     } catch (e) {
       console.error(e);
       setResults([]);

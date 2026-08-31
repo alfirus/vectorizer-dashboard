@@ -40,11 +40,17 @@ export default function AnalyticsPage() {
   }, []);
 
   const wsData = (analytics?.workspaces || []).map((ws) => ({
-    name: ws.workspace_id,
+    name: ws.workspace_id.replace(/^ws_/, ""),
     count: ws.document_count,
   }));
 
   const totalDocs = analytics?.total_documents || 0;
+
+  // Latency sparkline: last 10 search latencies from sessionStorage
+  const [sparklines, setSparklines] = useState<number[]>([]);
+  useEffect(() => { try { setSparklines(JSON.parse(sessionStorage.getItem("search_latencies") || "[]")); } catch {} }, []);
+  // Refresh sparklines when analytics loads (search may have happened before navigation)
+  useEffect(() => { if (analytics) { try { setSparklines(JSON.parse(sessionStorage.getItem("search_latencies") || "[]")); } catch {} } }, [analytics]);
 
   // Build role distribution from workspace data (approximation based on doc counts)
   const roleData = wsData.length > 0
@@ -157,6 +163,19 @@ export default function AnalyticsPage() {
                 />
               </PieChart>
             </ResponsiveContainer>
+          </div>
+          {/* Search latency sparkline */}
+          <div className="bg-surface border border-border rounded-lg p-4 lg:col-span-2">
+            <h2 className="text-sm font-semibold text-muted mb-2">Search latency (last 10, ms)</h2>
+            {sparklines.length === 0 ? <p className="text-muted text-sm">No searches yet.</p> : (
+              <ResponsiveContainer width="100%" height={60}>
+                <BarChart data={sparklines.map((v, i) => ({ i: i + 1, v }))}>
+                  <Bar dataKey="v" fill="#6366f1" radius={[2,2,0,0]} />
+                  <Tooltip contentStyle={{ backgroundColor: "#12121a", border: "1px solid #1e1e2e", borderRadius: 8 }} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+            <div className="text-xs text-muted font-mono mt-1">{sparklines.length > 0 ? `avg ${Math.round(sparklines.reduce((a,b)=>a+b,0)/sparklines.length)}ms · max ${Math.max(...sparklines)}ms` : ""}</div>
           </div>
         </div>
       )}
