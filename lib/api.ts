@@ -27,15 +27,24 @@ export async function getWorkspaces(): Promise<{ workspaces: Workspace[] }> {
   const res = await fetch(`${PROXY}/workspaces`, { headers: jsonHeaders });
   const data = await res.json();
 
-  // Enrich with ChromaDB doc counts
+  // Enrich with ChromaDB doc counts — GET /collections list has no count,
+  // so fetch count per collection. Falls back to 0 on error.
   try {
-    const collections = await getCollections();
+    const colRes = await fetch(`${CHROMA_PROXY}/api/v2/tenants/default_tenant/databases/default_database/collections`);
+    const cols = (await colRes.json()) as ChromaCollection[];
     const colMap: Record<string, number> = {};
-    for (const col of collections) {
-      colMap[col.name] = col.document_count || 0;
+    const countResults = await Promise.allSettled(
+      cols.map(async (col) => {
+        const countRes = await fetch(`${CHROMA_PROXY}/api/v2/tenants/default_tenant/databases/default_database/collections/${col.id}/count`);
+        const n = await countRes.json().catch(() => 0);
+        return { name: col.name, count: typeof n === "number" ? n : 0 };
+      })
+    );
+    for (const r of countResults) {
+      if (r.status === "fulfilled") colMap[r.value.name] = r.value.count;
     }
     for (const ws of data.workspaces || []) {
-      ws.document_count = colMap[`ws_${ws.id}`] || 0;
+      ws.document_count = colMap[`ws_${ws.id}`] ?? 0;
     }
   } catch { /* ignore */ }
 
