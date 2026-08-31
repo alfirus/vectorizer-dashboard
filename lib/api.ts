@@ -69,19 +69,25 @@ export async function getMessages(
 export async function searchMessages(
   query: string,
   workspaceId?: string,
-  nResults = 5
-): Promise<SearchResponse> {
-  // Use /messages/search/all when no workspace specified — server handles parallel search + RRF merge
+  nResults = 5,
+  hybrid = false
+): Promise<SearchResponse & { latency_ms?: number }> {
+  const start = performance.now();
+  let data: SearchResponse;
   if (!workspaceId) {
-    return searchAllWorkspaces(query, nResults);
+    data = await searchAllWorkspaces(query, nResults, hybrid);
+  } else {
+    const where: Record<string, unknown> = { workspace_id: workspaceId };
+    if (hybrid) where.hybrid = true;
+    const res = await fetch(`${PROXY}/messages/search`, {
+      method: "POST",
+      headers: jsonHeaders,
+      body: JSON.stringify({ query, n_results: nResults, where }),
+    });
+    data = await res.json();
   }
-  const where: Record<string, string> = { workspace_id: workspaceId };
-  const res = await fetch(`${PROXY}/messages/search`, {
-    method: "POST",
-    headers: jsonHeaders,
-    body: JSON.stringify({ query, n_results: nResults, where }),
-  });
-  return res.json();
+  const latency_ms = Math.round(performance.now() - start);
+  return { ...data, latency_ms };
 }
 
 // ---- Streaming brain API ----
@@ -97,12 +103,13 @@ export type BrainStreamEvent =
  */
 export async function* brainAskStream(
   question: string,
-  workspaceId?: string
+  workspaceId?: string,
+  hybrid = false
 ): AsyncGenerator<BrainStreamEvent> {
   const res = await fetch("/api/brain", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ question, workspaceId }),
+    body: JSON.stringify({ question, workspaceId, hybrid }),
   });
 
   if (!res.ok) {
@@ -158,12 +165,13 @@ export async function* brainAskStream(
  */
 export async function brainAsk(
   question: string,
-  workspaceId?: string
+  workspaceId?: string,
+  hybrid = false
 ): Promise<BrainResponse> {
   const res = await fetch(`/api/brain`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ question, workspaceId }),
+    body: JSON.stringify({ question, workspaceId, hybrid }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: "Request failed" }));
@@ -227,14 +235,41 @@ export async function getCollectionVectors(
 
 export async function searchAllWorkspaces(
   query: string,
-  nResults = 10
+  nResults = 10,
+  hybrid = false
 ): Promise<SearchResponse> {
-  const res = await fetch(`${PROXY}/messages/search/all`, {
-    method: "POST",
-    headers: jsonHeaders,
-    body: JSON.stringify({ query, n_results: nResults }),
-  });
-  return res.json();
+  // When hybrid=false, use the fast server-side RRF-merged endpoint
+  if (!hybrid) {
+    const res = await fetch(`${PROXY}/messages/search/all`, {
+      method: "POST",
+      headers: jsonHeaders,
+      body: JSON.stringify({ query, n_results: nResults }),
+    });
+    return res.json();
+  }
+  // Hybrid + all: do per-workspace HybridSearch in parallel, then merge (preserves BM25 + RRF per WS)
+  const ws = await getWorkspaces();
+  const ids = (ws.workspaces || []).map((w) => w.id);
+  const perWs = await Promise.all(
+    ids.map(async (id) => {
+      const res = await fetch(`${PROXY}/messages/search`, {
+        method: "POST",
+        headers: jsonHeaders,
+        body: JSON.stringify({ query, n_results: nResults, where: { workspace_id: id, hybrid: true } }),
+      });
+      const data = await res.json().catch(() => ({ results: [] }));
+      return (data.results || []) as SearchResult[];
+    })
+  );
+  const all = perWs.flat();
+  // Global sort by score/distance and dedupe
+  all.sort((a, b) => (b.score || 0) - (a.score || 0) || (a.distance || 999) - (b.distance || 999));
+  const seen = new Set<string>();
+  const deduped: SearchResult[] = [];
+  for (const r of all) {
+    if (!seen.has(r.id)) { seen.add(r.id); deduped.push(r); if (deduped.length >= nResults) break; }
+  }
+  return { count: deduped.length, results: deduped };
 }
 
 export async function getWorkspaceHealth(
@@ -252,4 +287,48 @@ export async function getSearchAnalytics(): Promise<SearchAnalytics> {
     headers: jsonHeaders,
   });
   return res.json();
+}
+
+// ---- Grep + Temporal (keyword + time-range) ----
+
+export async function grepMessages(
+  workspaceId: string,
+  q: string,
+  sessionId?: string
+): Promise<SearchResponse> {
+  const params = new URLSearchParams({ workspace_id: workspaceId, q });
+  if (sessionId) params.set("session_id", sessionId);
+  const res = await fetch(`${PROXY}/messages/grep?${params}`, { headers: jsonHeaders });
+  const data = await res.json();
+  const results: SearchResult[] = (data.results || data.messages || []).map((m: Record<string, unknown>) => ({
+    id: String(m.id || ""),
+    document: String(m.document || m.content || ""),
+    metadata: (m.metadata as Record<string, unknown>) || {},
+    score: 1,
+    source: "keyword",
+  }));
+  return { count: results.length, results };
+}
+
+export async function temporalSearch(
+  workspaceId: string,
+  q: string,
+  after?: string,
+  before?: string,
+  sessionId?: string
+): Promise<SearchResponse> {
+  const params = new URLSearchParams({ workspace_id: workspaceId, q });
+  if (after) params.set("after", after);
+  if (before) params.set("before", before);
+  if (sessionId) params.set("session_id", sessionId);
+  const res = await fetch(`${PROXY}/messages/temporal?${params}`, { headers: jsonHeaders });
+  const data = await res.json();
+  const results: SearchResult[] = (data.results || []).map((m: Record<string, unknown>) => ({
+    id: String(m.id || ""),
+    document: String(m.document || ""),
+    metadata: (m.metadata as Record<string, unknown>) || {},
+    score: 1,
+    source: "temporal",
+  }));
+  return { count: results.length, results };
 }

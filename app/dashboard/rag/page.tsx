@@ -35,6 +35,7 @@ export default function RagPage() {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
   const [workspace, setWorkspace] = useState("all");
+  const [hybrid, setHybrid] = useState(false);
   const [workspaces, setWorkspaces] = useState<{ id: string; name: string }[]>([]);
   const [loading, setLoading] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -76,7 +77,7 @@ export default function RagPage() {
       let answerText = "";
       let sources: { content: string; score: number }[] = [];
 
-      for await (const event of brainAskStream(q, ws)) {
+      for await (const event of brainAskStream(q, ws, hybrid)) {
         switch (event.type) {
           case "sources":
             sources = event.sources;
@@ -162,7 +163,7 @@ export default function RagPage() {
       </div>
 
       {/* Workspace selector */}
-      <div className="mb-3 flex items-center gap-2 text-sm">
+      <div className="mb-3 flex items-center gap-3 text-sm">
         <label className="text-muted">Workspace:</label>
         <select
           value={workspace}
@@ -176,6 +177,10 @@ export default function RagPage() {
             </option>
           ))}
         </select>
+        <label className="flex items-center gap-2 text-muted ml-2">
+          <input type="checkbox" checked={hybrid} onChange={(e) => setHybrid(e.target.checked)} className="rounded" />
+          Hybrid (vector + BM25)
+        </label>
       </div>
 
       {/* Context Preview Panel */}

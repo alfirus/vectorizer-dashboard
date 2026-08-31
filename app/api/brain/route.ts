@@ -35,7 +35,7 @@ async function getWorkspaceDocCounts(): Promise<Record<string, number>> {
 export const runtime = "nodejs";
 
 export async function POST(req: Request) {
-  const { question, workspaceId } = await req.json();
+  const { question, workspaceId, hybrid } = await req.json() as { question: string; workspaceId?: string; hybrid?: boolean };
 
   // Determine which workspaces to search
   let workspaces: string[];
@@ -68,7 +68,7 @@ export async function POST(req: Request) {
     });
   }
 
-  // Search all workspaces in parallel
+  // Search all workspaces in parallel (hybrid flag forwarded as where.hybrid for BM25+RRF)
   const searchPromises = workspaces.map((ws) =>
     fetch(`${VECTORIZER_URL}/api/v1/messages/search`, {
       method: "POST",
@@ -76,7 +76,7 @@ export async function POST(req: Request) {
       body: JSON.stringify({
         query: question,
         n_results: 5,
-        where: { workspace_id: ws },
+        where: hybrid ? { workspace_id: ws, hybrid: true } : { workspace_id: ws },
       }),
     }).then((r) => r.json())
   );
