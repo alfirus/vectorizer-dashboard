@@ -36,11 +36,26 @@ export interface SearchResult {
   distance?: number;
   document: string;
   metadata: Record<string, unknown>;
+  source?: string; // "semantic", "keyword", "hybrid"
 }
 
 export interface SearchResponse {
   count: number;
   results: SearchResult[] | null;
+}
+
+export interface WorkspaceHealth {
+  workspace_id: string;
+  document_count: number;
+  embedding_model: string;
+  embedding_dim: number;
+  status: string;
+}
+
+export interface SearchAnalytics {
+  total_workspaces: number;
+  total_documents: number;
+  workspaces: { workspace_id: string; document_count: number }[];
 }
 
 export interface BrainResponse {

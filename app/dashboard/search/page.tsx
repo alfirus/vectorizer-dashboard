@@ -114,6 +114,11 @@ export default function SearchPage() {
                 >
                   {(r.score * 100).toFixed(1)}%
                 </span>
+                {r.source && (
+                  <span className="text-xs text-muted px-2 py-0.5 bg-surface-hover rounded">
+                    {r.source}
+                  </span>
+                )}
                 <span className="text-xs text-muted font-mono">
                   {String(r.metadata?.session_id || r.id).slice(0, 30)}
                 </span>

@@ -244,3 +244,34 @@ export async function getCollectionVectors(
   );
   return res.json();
 }
+
+// ---- New API functions for Phase 3 ----
+
+export async function searchAllWorkspaces(
+  query: string,
+  nResults = 10
+): Promise<SearchResponse> {
+  const res = await fetch(`${VECTORIZER_URL}/api/v1/messages/search/all`, {
+    method: "POST",
+    headers: vHeaders,
+    body: JSON.stringify({ query, n_results: nResults }),
+  });
+  return res.json();
+}
+
+export async function getWorkspaceHealth(
+  workspaceId: string
+): Promise<WorkspaceHealth> {
+  const res = await fetch(
+    `${VECTORIZER_URL}/api/v1/workspaces/${workspaceId}/health`,
+    { headers: vHeaders }
+  );
+  return res.json();
+}
+
+export async function getSearchAnalytics(): Promise<SearchAnalytics> {
+  const res = await fetch(`${VECTORIZER_URL}/api/v1/messages/analytics`, {
+    headers: vHeaders,
+  });
+  return res.json();
+}
