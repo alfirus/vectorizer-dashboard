@@ -323,7 +323,7 @@ export default function GraphPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold">Knowledge Graph</h1>
+      <h1 className="text-xl lg:text-2xl font-bold">Knowledge Graph</h1>
       <p className="text-sm text-muted">
         Force-directed visualization of Vectorizer&apos;s GRAPH.json — {stats?.total || 0} nodes, {stats?.edges || 0} edges
       </p>

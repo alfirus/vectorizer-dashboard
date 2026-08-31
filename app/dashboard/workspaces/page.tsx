@@ -87,7 +87,7 @@ export default function WorkspacesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <h1 className="text-2xl font-bold">Workspaces</h1>
         <button
           onClick={() => setShowCreate(!showCreate)}
@@ -98,7 +98,7 @@ export default function WorkspacesPage() {
       </div>
 
       {showCreate && (
-        <div className="flex items-center gap-3 bg-surface border border-border rounded-lg p-4">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 bg-surface border border-border rounded-lg p-4">
           <input
             type="text"
             value={newName}
@@ -176,7 +176,7 @@ export default function WorkspacesPage() {
                 <button
                   onClick={() => handleDelete(ws.id)}
                   disabled={deleting === ws.id}
-                  className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 p-1.5 rounded-md text-red-400 hover:bg-red-500/15 transition-all disabled:opacity-30"
+                  className="absolute top-3 right-3 opacity-60 lg:opacity-0 lg:group-hover:opacity-100 p-2 lg:p-1.5 rounded-md text-red-400 hover:bg-red-500/15 transition-all disabled:opacity-30"
                   title="Delete workspace"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

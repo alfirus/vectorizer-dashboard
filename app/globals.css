@@ -7,10 +7,25 @@
   --background: #0a0a0f;
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
 body {
   color: var(--foreground);
   background: var(--background);
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  overscroll-behavior-y: none;
+}
+
+/* Larger tap targets on mobile */
+@media (max-width: 1024px) {
+  button, a, select, input[type="checkbox"] {
+    min-height: 44px;
+  }
+  input, select, textarea {
+    font-size: 16px; /* prevents iOS zoom on focus */
+  }
 }
 
 /* Scrollbar */
@@ -18,7 +33,3 @@ body {
 ::-webkit-scrollbar-track { background: #12121a; }
 ::-webkit-scrollbar-thumb { background: #2a2a3a; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #3a3a4a; }
-
-/* Plotly overrides for dark theme */
-.js-plotly-plot .plotly .modebar { background: transparent !important; }
-.js-plotly-plot .plotly .modebar-btn path { fill: #64748b !important; }

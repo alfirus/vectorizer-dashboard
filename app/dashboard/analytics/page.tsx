@@ -67,8 +67,8 @@ export default function AnalyticsPage() {
   });
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Analytics</h1>
+    <div className="space-y-4 lg:space-y-6">
+      <h1 className="text-xl lg:text-2xl font-bold">Analytics</h1>
 
       {loading ? (
         <div className="grid grid-cols-2 gap-4">

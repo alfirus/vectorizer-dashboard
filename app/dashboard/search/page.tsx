@@ -102,8 +102,8 @@ export default function SearchPage() {
           </button>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3 text-sm">
-          <label className="flex items-center gap-2 text-muted">
+        <div className="flex flex-col lg:flex-row lg:flex-wrap lg:items-center gap-3 text-sm">
+          <label className="flex items-center gap-2 text-muted w-full lg:w-auto">
             Workspace:
             <select
               value={workspace}
@@ -119,7 +119,7 @@ export default function SearchPage() {
             </select>
           </label>
 
-          <label className="flex items-center gap-2 text-muted">
+          <label className="flex items-center gap-2 text-muted w-full lg:w-auto">
             Mode:
             <select
               value={mode}
@@ -134,7 +134,7 @@ export default function SearchPage() {
           </label>
 
           {mode !== "grep" && mode !== "temporal" && (
-            <label className="flex items-center gap-2 text-muted">
+            <label className="flex items-center gap-2 text-muted w-full lg:w-auto">
               Results:
               <input
                 type="range"

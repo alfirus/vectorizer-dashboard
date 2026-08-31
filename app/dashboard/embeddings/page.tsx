@@ -141,7 +141,7 @@ export default function EmbeddingsPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Embedding Visualization</h1>
+      <h1 className="text-xl lg:text-2xl font-bold">Embedding Visualization</h1>
       <p className="text-sm text-muted">
         PCA projection of document embeddings to 2D. Each dot = one stored
         message.

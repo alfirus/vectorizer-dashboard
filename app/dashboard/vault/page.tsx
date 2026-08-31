@@ -90,7 +90,7 @@ export default function VaultPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold">Vault</h1>
           <p className="text-sm text-muted mt-1">
@@ -140,7 +140,7 @@ export default function VaultPage() {
       )}
 
       {/* Search */}
-      <div className="flex gap-2">
+      <div className="flex gap-2 flex-col sm:flex-row">
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -178,7 +178,7 @@ export default function VaultPage() {
           <div className="text-xs text-muted">
             Showing {offset + 1}–{Math.min(offset + limit, total)} of {total}
           </div>
-          <div className="bg-surface border border-border rounded-lg overflow-hidden">
+          <div className="bg-surface border border-border rounded-lg overflow-hidden overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-surface-hover">
                 <tr className="text-left text-muted">

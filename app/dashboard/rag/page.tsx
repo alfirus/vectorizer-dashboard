@@ -154,16 +154,16 @@ export default function RagPage() {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-3rem)]">
+    <div className="flex flex-col min-h-[70vh] lg:h-[calc(100vh-3rem)]">
       <div className="mb-4">
-        <h1 className="text-2xl font-bold">RAG Q&A</h1>
+        <h1 className="text-xl lg:text-2xl font-bold">RAG Q&A</h1>
         <p className="text-sm text-muted">
           Ask questions — powered by LM Studio directly (streaming responses).
         </p>
       </div>
 
       {/* Workspace selector */}
-      <div className="mb-3 flex items-center gap-3 text-sm">
+      <div className="mb-3 flex flex-col sm:flex-row sm:items-center gap-3 text-sm">
         <label className="text-muted">Workspace:</label>
         <select
           value={workspace}
@@ -254,7 +254,7 @@ export default function RagPage() {
       </div>
 
       {/* Chat messages */}
-      <div className="flex-1 overflow-y-auto space-y-3 mb-4 bg-surface border border-border rounded-lg p-4">
+      <div className="flex-1 min-h-[240px] overflow-y-auto space-y-3 mb-4 bg-surface border border-border rounded-lg p-4">
         {messages.length === 0 && (
           <p className="text-muted text-center py-12">
             Ask something about your data…
@@ -268,7 +268,7 @@ export default function RagPage() {
             }`}
           >
             <div
-              className={`max-w-[80%] rounded-lg px-4 py-2 text-sm ${
+              className={`max-w-[92%] lg:max-w-[80%] rounded-lg px-3 lg:px-4 py-2 text-sm ${
                 m.role === "user"
                   ? "bg-primary/20 text-foreground"
                   : "bg-surface-hover text-foreground border border-border"
