@@ -152,7 +152,7 @@ export default function EmbeddingsPage() {
         <select
           value={selected}
           onChange={(e) => setSelected(e.target.value)}
-          className="bg-surface border border-border rounded px-2 py-1 text-sm"
+          className="bg-card border border-border rounded px-2 py-1 text-sm"
         >
           {collections.map((c) => (
             <option key={c.id} value={c.id}>
@@ -165,7 +165,7 @@ export default function EmbeddingsPage() {
         <select
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
-          className="bg-surface border border-border rounded px-2 py-1 text-sm"
+          className="bg-card border border-border rounded px-2 py-1 text-sm"
         >
           <option value="">All</option>
           <option value="user">User</option>
@@ -179,13 +179,13 @@ export default function EmbeddingsPage() {
       </div>
 
       {loading ? (
-        <div className="h-[500px] bg-surface border border-border rounded-lg animate-pulse" />
+        <div className="h-[500px] bg-card border border-border rounded-2xl shadow-card animate-pulse" />
       ) : filtered.length === 0 ? (
-        <div className="h-[500px] bg-surface border border-border rounded-lg flex items-center justify-center text-muted">
+        <div className="h-[500px] bg-card border border-border rounded-2xl shadow-card flex items-center justify-center text-muted">
           No embedding data in this collection.
         </div>
       ) : (
-        <div className="bg-surface border border-border rounded-lg p-4 overflow-x-auto">
+        <div className="bg-card border border-border rounded-2xl shadow-card p-4 overflow-x-auto">
           <svg
             viewBox={`0 0 ${svgW} ${svgH}`}
             className="w-full"

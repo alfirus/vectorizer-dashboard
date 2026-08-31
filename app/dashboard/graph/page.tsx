@@ -333,7 +333,7 @@ export default function GraphPage() {
         <select
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
-          className="bg-surface border border-border rounded px-2 py-1 text-sm"
+          className="bg-card border border-border rounded-xl px-2 py-1 text-sm"
         >
           <option value="">All types</option>
           <option value="doc">Documents</option>
@@ -390,13 +390,13 @@ export default function GraphPage() {
       </div>
 
       {loading ? (
-        <div className="h-[600px] bg-surface border border-border rounded-lg animate-pulse" />
+        <div className="h-[600px] bg-card border border-border rounded-2xl shadow-card animate-pulse" />
       ) : !graph ? (
-        <div className="h-[600px] bg-surface border border-border rounded-lg flex items-center justify-center text-muted">
+        <div className="h-[600px] bg-card border border-border rounded-2xl shadow-card flex items-center justify-center text-muted">
           Failed to load graph data. Ensure GRAPH.json is accessible.
         </div>
       ) : (
-        <div className="bg-surface border border-border rounded-lg overflow-hidden relative">
+        <div className="bg-card border border-border rounded-2xl shadow-card overflow-hidden relative">
           <canvas
             ref={canvasRef}
             width={1200}

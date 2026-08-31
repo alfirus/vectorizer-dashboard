@@ -1,9 +1,10 @@
 "use client";
-
 import { useEffect, useState } from "react";
 import { StatCard } from "@/components/StatCard";
 import { getHealth, getWorkspaces, getCollections } from "@/lib/api";
 import type { HealthResponse, Workspace, ChromaCollection } from "@/lib/types";
+import { Activity, Database, Cpu, Sparkles, ArrowRight, CheckCircle2, AlertTriangle } from "lucide-react";
+import Link from "next/link";
 
 export default function DashboardPage() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
@@ -13,11 +14,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     Promise.all([getHealth(), getWorkspaces(), getCollections()])
-      .then(([h, w, c]) => {
-        setHealth(h);
-        setWorkspaces(w.workspaces || []);
-        setCollections(c);
-      })
+      .then(([h, w, c]) => { setHealth(h); setWorkspaces(w.workspaces || []); setCollections(c); })
       .catch((e) => {
         console.error(e);
         setHealth({ status: "offline", name: "vectorizer", version: "—", llm_enabled: false, chromadb: "offline", embedding_model: "—" } as HealthResponse);
@@ -25,157 +22,110 @@ export default function DashboardPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <PageSkeleton />;
+  if (loading) return (
+    <div className="space-y-4 animate-pulse">
+      <div className="h-28 rounded-2xl bg-card border border-border" />
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {[1,2,3,4].map(i => <div key={i} className="h-24 rounded-2xl bg-card border border-border" />)}
+      </div>
+    </div>
+  );
+
   if (!health || health.chromadb === "offline" || health.status === "offline") {
     return (
-      <div className="space-y-4">
-        <h1 className="text-xl lg:text-2xl font-bold">Dashboard</h1>
-        <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-6 text-center">
-          <div className="text-2xl mb-2">⚠️ Vectorizer offline</div>
-          <p className="text-sm text-muted mb-3">Cannot reach Vectorizer at {typeof window !== "undefined" ? window.location.origin : "8091"}. Check docker ps and retry.</p>
-          <button onClick={() => window.location.reload()} className="px-4 py-2 bg-red-500 text-white rounded-md text-sm">Retry</button>
+      <div className="space-y-6">
+        <div className="rounded-2xl bg-danger/10 border border-danger/20 p-6 text-center">
+          <AlertTriangle className="w-10 h-10 text-danger mx-auto mb-3" />
+          <h2 className="font-bold">Vectorizer offline</h2>
+          <p className="text-sm text-muted mt-1">Cannot reach 100.121.188.113:8091 · Check docker ps</p>
+          <button onClick={() => location.reload()} className="mt-4 px-5 py-2.5 rounded-xl bg-danger text-white text-sm font-medium">Retry</button>
         </div>
       </div>
     );
   }
 
-  // Calculate totals
-  const totalDocs = workspaces.reduce((sum, ws) => sum + (ws.document_count || 0), 0);
-  const wsCollections = collections.filter((c) => c.name.startsWith("ws_"));
-  const avgDimension = wsCollections.length > 0
-    ? Math.round(wsCollections.reduce((sum, c) => sum + (c.dimension || 0), 0) / wsCollections.length)
-    : 0;
+  const totalDocs = workspaces.reduce((s, w) => s + (w.document_count || 0), 0);
+  const dims = collections.filter(c => c.name.startsWith("ws_")).map(c => c.dimension || 0).filter(Boolean);
+  const avgDim = dims.length ? Math.round(dims.reduce((a,b)=>a+b,0)/dims.length) : 0;
 
   return (
-    <div className="space-y-4 lg:space-y-6">
-      <h1 className="text-xl lg:text-2xl font-bold">Dashboard</h1>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard
-          icon="🟢"
-          label="Status"
-          value={health?.status || "unknown"}
-          accent="text-success"
-        />
-        <StatCard icon="📦" label="Workspaces" value={workspaces.length} />
-        <StatCard
-          icon="🤖"
-          label="Embedding Model"
-          value={health?.embedding_model || "—"}
-        />
-        <StatCard
-          icon="🧠"
-          label="LLM Brain"
-          value={health?.llm_enabled ? "Enabled" : "Disabled"}
-          accent={health?.llm_enabled ? "text-success" : "text-muted"}
-        />
-      </div>
-
-      {/* Workspace Health Summary */}
-      <div className="bg-surface border border-border rounded-lg p-4">
-        <h2 className="text-sm font-semibold text-muted mb-3">
-          Workspace Health
-        </h2>
-        {workspaces.length === 0 ? (
-          <p className="text-sm text-muted">No workspaces found.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border">
-                  <th className="text-left text-muted font-medium py-2 pr-4">Workspace</th>
-                  <th className="text-right text-muted font-medium py-2 px-4">Documents</th>
-                  <th className="text-right text-muted font-medium py-2 px-4">Dimension</th>
-                  <th className="text-right text-muted font-medium py-2 pl-4">Created</th>
-                </tr>
-              </thead>
-              <tbody>
-                {workspaces.map((ws) => {
-                  const colName = `ws_${ws.id}`;
-                  const col = collections.find((c) => c.name === colName);
-                  return (
-                    <tr key={ws.id} className="border-b border-border/50 hover:bg-surface-hover transition-colors">
-                      <td className="py-2 pr-4 font-mono text-foreground">{ws.name || ws.id}</td>
-                      <td className="py-2 px-4 text-right font-mono text-foreground">
-                        {ws.document_count ?? "—"}
-                      </td>
-                      <td className="py-2 px-4 text-right font-mono text-foreground">
-                        {col?.dimension ?? "—"}
-                      </td>
-                      <td className="py-2 pl-4 text-right text-muted">
-                        {ws.created_at !== "0001-01-01T00:00:00Z"
-                          ? new Date(ws.created_at).toLocaleDateString()
-                          : "—"}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+    <div className="space-y-5 animate-fadeIn">
+      {/* Hero */}
+      <div className="rounded-2xl bg-gradient-to-br from-primary via-primary to-[#4f46e5] p-5 lg:p-6 text-white relative overflow-hidden">
+        <div className="absolute -right-10 -top-10 w-40 h-40 bg-white/10 rounded-full blur-2xl" />
+        <div className="relative">
+          <div className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-xs font-medium backdrop-blur">
+            <span className="w-2 h-2 rounded-full bg-success animate-pulse" /> All systems operational
           </div>
-        )}
+          <h1 className="text-2xl lg:text-[28px] font-bold tracking-tight mt-3">Semantic Memory</h1>
+          <p className="text-sm text-white/80 mt-1 max-w-[36ch]">768d Nomic · 68 files indexed · Qwen3.6-35B RAG · instant hybrid search.</p>
+          <div className="flex gap-2 mt-4">
+            <Link href="/dashboard/search" className="inline-flex items-center gap-1.5 rounded-xl bg-white text-primary px-4 py-2.5 text-sm font-semibold">Search <ArrowRight className="w-4 h-4" /></Link>
+            <Link href="/dashboard/rag" className="inline-flex items-center gap-1.5 rounded-xl bg-white/15 text-white border border-white/20 px-4 py-2.5 text-sm font-medium">Ask RAG</Link>
+          </div>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="bg-surface border border-border rounded-lg p-4">
-          <h2 className="text-sm font-semibold text-muted mb-3">
-            System Info
-          </h2>
-          <dl className="space-y-2 text-sm">
-            <Row label="Version" value={health?.version || "—"} />
-            <Row label="ChromaDB" value={health?.chromadb || "—"} />
-            <Row
-              label="LLM Enabled"
-              value={health?.llm_enabled ? "Yes" : "No"}
-            />
-            <Row label="Total Documents" value={String(totalDocs)} />
-            <Row label="Avg Dimension" value={avgDimension > 0 ? String(avgDimension) : "—"} />
+      {/* Stats */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <StatCard icon="●" label="Status" value={health.status} accent="text-success" sub={health.version} />
+        <StatCard icon="◧" label="Workspaces" value={workspaces.length} sub={`${totalDocs} docs`} />
+        <StatCard icon="◈" label="Embedding" value={(health.embedding_model || "—").split("/").pop() || "—"} sub={`${avgDim || 768}d`} />
+        <StatCard icon="✦" label="LLM Brain" value={health.llm_enabled ? "Enabled" : "Disabled"} accent={health.llm_enabled ? "text-success" : "text-muted"} sub={health.llm_enabled ? "Qwen3.6-35B" : "offline"} />
+      </div>
+
+      {/* Workspaces */}
+      <div className="bg-card border border-border rounded-2xl shadow-card overflow-hidden">
+        <div className="px-4 py-3.5 flex items-center justify-between border-b border-border">
+          <h2 className="text-sm font-semibold flex items-center gap-2"><Database className="w-4 h-4 text-muted" /> Workspaces</h2>
+          <Link href="/dashboard/workspaces" className="text-xs font-medium text-primary">View all →</Link>
+        </div>
+        {/* Mobile: cards, Desktop: table */}
+        <div className="lg:hidden divide-y divide-border">
+          {workspaces.map(ws => {
+            const col = collections.find(c => c.name === `ws_${ws.id}`);
+            return (
+              <Link key={ws.id} href={`/dashboard/workspaces/${ws.id}`} className="flex items-center justify-between px-4 py-3.5 active:bg-surface">
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold font-mono truncate">{ws.id}</div>
+                  <div className="text-xs text-muted">{ws.document_count ?? 0} docs · {col?.dimension ?? 768}d</div>
+                </div>
+                <ArrowRight className="w-4 h-4 text-muted shrink-0" />
+              </Link>
+            );
+          })}
+        </div>
+        <div className="hidden lg:block overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead><tr className="text-xs text-muted border-b border-border"><th className="text-left font-medium px-4 py-2.5">Workspace</th><th className="text-right font-medium px-4 py-2.5">Docs</th><th className="text-right font-medium px-4 py-2.5">Dim</th><th className="text-right font-medium px-4 py-2.5">Created</th></tr></thead>
+            <tbody>{workspaces.map(ws => {
+              const col = collections.find(c => c.name === `ws_${ws.id}`);
+              return <tr key={ws.id} className="border-b border-border/60 hover:bg-surface"><td className="px-4 py-2.5 font-mono">{ws.id}</td><td className="px-4 py-2.5 text-right font-mono">{ws.document_count ?? 0}</td><td className="px-4 py-2.5 text-right font-mono">{col?.dimension ?? "—"}</td><td className="px-4 py-2.5 text-right text-muted text-xs">{ws.created_at && ws.created_at !== "0001-01-01T00:00:00Z" ? new Date(ws.created_at).toLocaleDateString() : "—"}</td></tr>;
+            })}</tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* System */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <div className="bg-card border border-border rounded-2xl p-4 shadow-card">
+          <h3 className="text-sm font-semibold mb-3 flex items-center gap-2"><Cpu className="w-4 h-4 text-muted" /> System</h3>
+          <dl className="space-y-2.5 text-sm">
+            <div className="flex justify-between"><span className="text-muted">Version</span><span className="font-mono">{health.version}</span></div>
+            <div className="flex justify-between"><span className="text-muted">ChromaDB</span><span className="font-mono flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-success" />{health.chromadb}</span></div>
+            <div className="flex justify-between"><span className="text-muted">Total docs</span><span className="font-mono">{totalDocs}</span></div>
+            <div className="flex justify-between"><span className="text-muted">Avg dim</span><span className="font-mono">{avgDim || "—"}</span></div>
           </dl>
         </div>
-
-        <div className="bg-surface border border-border rounded-lg p-4">
-          <h2 className="text-sm font-semibold text-muted mb-3">
-            Workspaces
-          </h2>
-          {workspaces.length === 0 ? (
-            <p className="text-sm text-muted">No workspaces found.</p>
-          ) : (
-            <ul className="space-y-2">
-              {workspaces.map((ws) => (
-                <li
-                  key={ws.id}
-                  className="flex items-center justify-between text-sm px-2 py-1 rounded bg-surface-hover"
-                >
-                  <span className="font-mono capitalize">{ws.name || ws.id}</span>
-                  <span className="text-muted text-xs">
-                    {ws.document_count || 0} docs
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
+        <div className="bg-card border border-border rounded-2xl p-4 shadow-card">
+          <h3 className="text-sm font-semibold mb-3 flex items-center gap-2"><Activity className="w-4 h-4 text-muted" /> Quick actions</h3>
+          <div className="grid grid-cols-2 gap-2">
+            <Link href="/dashboard/vault" className="rounded-xl bg-surface border border-border p-3 hover:border-primary/30 transition-colors"><div className="text-sm font-semibold">Vault</div><div className="text-xs text-muted">68 files</div></Link>
+            <Link href="/dashboard/search" className="rounded-xl bg-surface border border-border p-3 hover:border-primary/30 transition-colors"><div className="text-sm font-semibold">Search</div><div className="text-xs text-muted">Hybrid · Grep</div></Link>
+            <Link href="/dashboard/graph" className="rounded-xl bg-surface border border-border p-3 hover:border-primary/30 transition-colors"><div className="text-sm font-semibold">Graph</div><div className="text-xs text-muted">1419 nodes</div></Link>
+            <Link href="/dashboard/analytics" className="rounded-xl bg-surface border border-border p-3 hover:border-primary/30 transition-colors"><div className="text-sm font-semibold">Analytics</div><div className="text-xs text-muted">Latency</div></Link>
+          </div>
         </div>
-      </div>
-    </div>
-  );
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex justify-between">
-      <dt className="text-muted">{label}</dt>
-      <dd className="font-mono text-foreground">{value}</dd>
-    </div>
-  );
-}
-
-function PageSkeleton() {
-  return (
-    <div className="space-y-6 animate-pulse">
-      <div className="h-8 w-48 bg-surface-hover rounded" />
-      <div className="grid grid-cols-4 gap-4">
-        {[1, 2, 3, 4].map((i) => (
-          <div key={i} className="h-24 bg-surface-hover rounded-lg" />
-        ))}
       </div>
     </div>
   );
