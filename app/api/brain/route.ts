@@ -1,7 +1,7 @@
-const VECTORIZER_URL = "http://localhost:8091";
-const LM_STUDIO_URL = "http://localhost:1234";
-const LM_STUDIO_KEY = process.env.LM_STUDIO_KEY || "";
-const API_KEY = "vectorizer-local-key";
+const VECTORIZER_URL = process.env.VECTORIZER_URL || "http://vectorizer:8091";
+const LM_STUDIO_URL = process.env.LM_STUDIO_URL || process.env.OAI_COMPATIBLE_URL || "http://host.docker.internal:1234/v1";
+const LM_STUDIO_KEY = process.env.LM_STUDIO_KEY || process.env.LM_STUDIO_API_KEY || process.env.OAI_API_KEY || "";
+const API_KEY = process.env.VECTORIZER_API_KEY || "vectorizer-local-key";
 
 const vHeaders = {
   "Content-Type": "application/json",

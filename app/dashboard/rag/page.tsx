@@ -284,14 +284,15 @@ export default function RagPage() {
                     <span className="text-muted animate-pulse">Thinking…</span>
                   ) : null}
                   {m.sources && m.sources.length > 0 && (
-                    <div className="mt-3 pt-2 border-t border-border/50">
-                      <p className="text-xs text-muted mb-1">Sources:</p>
-                      {m.sources.slice(0, 3).map((s, i) => (
-                        <p key={i} className="text-xs text-muted/70 leading-none mb-0.5">
-                          {s.content.slice(0, 100)}… ({(s.score * 100).toFixed(0)}%)
-                        </p>
+                    <details className="mt-3 pt-2 border-t border-border/50">
+                      <summary className="text-xs text-primary cursor-pointer">Sources ({m.sources.length})</summary>
+                      {m.sources.map((s, i) => (
+                        <div key={i} className="mt-2 bg-background border border-border rounded p-2 flex gap-2">
+                          <p className="text-xs text-muted/80 leading-relaxed flex-1 whitespace-pre-wrap">{s.content.slice(0, 400)}{s.content.length > 400 ? "…" : ""} <span className="font-mono">({(s.score * 100).toFixed(0)}%)</span></p>
+                          <button onClick={() => { navigator.clipboard.writeText(s.content); }} className="text-xs px-1.5 py-0.5 border border-border rounded h-fit shrink-0 hover:bg-surface">Copy</button>
+                        </div>
                       ))}
-                    </div>
+                    </details>
                   )}
                 </div>
               ) : (

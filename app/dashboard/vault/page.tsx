@@ -16,6 +16,12 @@ interface VaultStats {
   graph: { nodes: number; edges: number; byType: Record<string, number> };
 }
 
+interface VaultFilePreview {
+  path: string;
+  content: string;
+  meta: Record<string, unknown>;
+}
+
 export default function VaultPage() {
   const [stats, setStats] = useState<VaultStats | null>(null);
   const [files, setFiles] = useState<VaultFile[]>([]);
@@ -27,6 +33,19 @@ export default function VaultPage() {
   const [reindexError, setReindexError] = useState<string | null>(null);
   const [offset, setOffset] = useState(0);
   const limit = 50;
+  const [preview, setPreview] = useState<VaultFilePreview | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+
+  const openPreview = async (path: string) => {
+    setPreviewLoading(true);
+    try {
+      const r = await fetch(`/api/vault?action=file&path=${encodeURIComponent(path)}`);
+      const j = await r.json();
+      if (r.ok) setPreview({ path: j.path, content: j.content, meta: j.meta || {} });
+      else setPreview({ path, content: j.error || "Failed to load", meta: {} });
+    } catch (e) { setPreview({ path, content: String(e), meta: {} }); }
+    finally { setPreviewLoading(false); }
+  };
 
   const load = async (q = query, off = offset) => {
     setLoading(true);
@@ -189,8 +208,8 @@ export default function VaultPage() {
               </thead>
               <tbody>
                 {files.map((f) => (
-                  <tr key={f.path} className="border-t border-border/50 hover:bg-surface-hover/50">
-                    <td className="px-3 py-1.5 font-mono text-xs truncate max-w-[420px]" title={f.path}>
+                  <tr key={f.path} className="border-t border-border/50 hover:bg-surface-hover/50 cursor-pointer" onClick={() => openPreview(f.path)}>
+                    <td className="px-3 py-1.5 font-mono text-xs truncate max-w-[420px] text-primary hover:underline" title={f.path}>
                       {f.path.replace(/^.*SynologyDrive\/ai\//, "").replace(/\\/g, "/")}
                     </td>
                     <td className="px-3 py-1.5 text-muted">{f.chunks}</td>
@@ -225,6 +244,29 @@ export default function VaultPage() {
             </button>
           </div>
         </>
+      )}
+
+      {(preview || previewLoading) && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={() => setPreview(null)}>
+          <div className="bg-surface border border-border rounded-lg w-full max-w-3xl max-h-[85vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+              <span className="font-mono text-sm truncate">{preview?.path || "Loading..."}</span>
+              <button onClick={() => setPreview(null)} className="px-2 py-1 text-sm border border-border rounded hover:bg-surface-hover">Close</button>
+            </div>
+            {previewLoading ? <div className="p-8 text-center text-muted animate-pulse">Loading...</div> : (
+              <div className="overflow-auto p-4 space-y-3">
+                {preview?.meta && Object.keys(preview.meta).length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {Object.entries(preview.meta).slice(0, 12).map(([k,v]) => (
+                      <span key={k} className="text-xs bg-surface-hover border border-border rounded px-1.5 py-0.5 font-mono">{k}: {String(v).slice(0,80)}</span>
+                    ))}
+                  </div>
+                )}
+                <pre className="text-xs whitespace-pre-wrap break-words font-mono leading-relaxed bg-surface-hover rounded p-3 max-h-[55vh] overflow-auto">{(preview?.content || "").slice(0, 12000)}</pre>
+              </div>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );

@@ -18,11 +18,26 @@ export default function DashboardPage() {
         setWorkspaces(w.workspaces || []);
         setCollections(c);
       })
-      .catch(console.error)
+      .catch((e) => {
+        console.error(e);
+        setHealth({ status: "offline", name: "vectorizer", version: "—", llm_enabled: false, chromadb: "offline", embedding_model: "—" } as HealthResponse);
+      })
       .finally(() => setLoading(false));
   }, []);
 
   if (loading) return <PageSkeleton />;
+  if (!health || health.chromadb === "offline" || health.status === "offline") {
+    return (
+      <div className="space-y-4">
+        <h1 className="text-xl lg:text-2xl font-bold">Dashboard</h1>
+        <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-6 text-center">
+          <div className="text-2xl mb-2">⚠️ Vectorizer offline</div>
+          <p className="text-sm text-muted mb-3">Cannot reach Vectorizer at {typeof window !== "undefined" ? window.location.origin : "8091"}. Check docker ps and retry.</p>
+          <button onClick={() => window.location.reload()} className="px-4 py-2 bg-red-500 text-white rounded-md text-sm">Retry</button>
+        </div>
+      </div>
+    );
+  }
 
   // Calculate totals
   const totalDocs = workspaces.reduce((sum, ws) => sum + (ws.document_count || 0), 0);

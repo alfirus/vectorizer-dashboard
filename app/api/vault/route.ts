@@ -26,6 +26,33 @@ export async function GET(request: Request) {
   const offset = parseInt(searchParams.get("offset") || "0", 10);
   const limit = Math.min(parseInt(searchParams.get("limit") || "50", 10), 200);
 
+  if (action === "file") {
+    const p = searchParams.get("path") || "";
+    if (!p) return NextResponse.json({ error: "path required" }, { status: 400 });
+    // Security: only allow reading under VAULT_ROOT, no traversal
+    const path = await import("path");
+    const resolved = path.resolve(p);
+    const root = path.resolve(VAULT_ROOT);
+    if (!resolved.startsWith(root) && !path.resolve(VAULT_ROOT + "/" + p).startsWith(root)) {
+      return NextResponse.json({ error: "path outside vault" }, { status: 403 });
+    }
+    const target = existsSync(p) ? p : existsSync(path.join(VAULT_ROOT, p)) ? path.join(VAULT_ROOT, p) : path.join(root, p.replace(/^.*SynologyDrive\/ai\//, "").replace(/\\/g, "/"));
+    const real = existsSync(target) ? target : p;
+    if (!existsSync(real)) return NextResponse.json({ error: `not found: ${real}` }, { status: 404 });
+    try {
+      const content = await readFile(real, "utf-8");
+      // Try to get metadata from index
+      let meta: Record<string, unknown> = {};
+      try {
+        const idxRaw = await readFile(MEMORY_INDEX_PATH, "utf-8");
+        const idx = JSON.parse(idxRaw);
+        const entry = idx.files?.[p] || idx.files?.[real] || Object.entries(idx.files || {}).find(([k]) => real.endsWith(k.replace(/\\/g, "/")))?.[1] as Record<string, unknown> | undefined;
+        if (entry) meta = entry as Record<string, unknown>;
+      } catch { /* no meta */ }
+      return NextResponse.json({ path: p, real, content: content.slice(0, 12000), meta });
+    } catch (e) { return NextResponse.json({ error: String(e) }, { status: 500 }); }
+  }
+
   try {
     if (action === "stats") {
       // Quick stats for vault tab header

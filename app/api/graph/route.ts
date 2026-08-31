@@ -5,19 +5,17 @@ export const dynamic = "force-dynamic";
 
 const GRAPH_PATH = process.env.GRAPH_PATH || "/data/ai/maisarah/vault/00-index/GRAPH.json";
 
-// Workspace detection from node source paths
+// Workspace detection from node source paths — prefer workspace_id, else path prefix
 function detectWorkspace(node: Record<string, unknown>): string {
-  const rel = (node.rel as string) || "";
-  const id = (node.id as string) || "";
-  
-  if (rel.startsWith("_shared/") || id.startsWith("_shared/")) return "family";
-  if (rel.startsWith("maisarah/") || id.startsWith("maisarah/")) return "maisarah";
-  if (rel.startsWith("sofia/") || id.startsWith("sofia/")) return "sofia";
-  
-  // Check for workspace_id in node metadata
   if (node.workspace_id) return String(node.workspace_id);
-  
-  return "family"; // default
+  const rel = (node.rel as string) || (node.source_path as string) || "";
+  const id = (node.id as string) || "";
+  const hay = `${rel} ${id}`;
+  if (hay.includes("shiela")) return "shiela";
+  if (rel.startsWith("maisarah/") || id.startsWith("maisarah/") || hay.includes("maisarah")) return "maisarah";
+  if (rel.startsWith("sofia/") || id.startsWith("sofia/") || hay.includes("sofia")) return "sofia";
+  if (rel.startsWith("_shared/") || id.startsWith("_shared/")) return "family";
+  return "family";
 }
 
 export async function GET(request: Request) {

@@ -14,6 +14,17 @@ interface Hit {
 
 type Mode = "semantic" | "hybrid" | "grep" | "temporal";
 
+function highlightSnippet(text: string, query: string): React.ReactNode {
+  if (!query.trim()) return text.slice(0, 600) + (text.length > 600 ? "…" : "");
+  const q = query.trim().split(/\s+/).filter(Boolean).slice(0, 6);
+  if (q.length === 0) return text.slice(0, 600) + (text.length > 600 ? "…" : "");
+  const escaped = q.map(s => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const re = new RegExp(`(${escaped.join("|")})`, "gi");
+  const snippet = text.slice(0, 600);
+  const parts = snippet.split(re);
+  return parts.map((part, i) => q.some(s => s.toLowerCase() === part.toLowerCase()) ? <mark key={i} className="bg-yellow-500/30 text-yellow-200 rounded px-0.5">{part}</mark> : part).concat(text.length > 600 ? "…" : "");
+}
+
 export default function SearchPage() {
   const [query, setQuery] = useState("");
   const [workspace, setWorkspace] = useState("all");
@@ -222,10 +233,10 @@ export default function SearchPage() {
                       {String(r.metadata.role)}
                     </span>
                   ) : null}
+                  <button onClick={() => { navigator.clipboard.writeText(r.document || ""); }} className="ml-auto text-xs px-2 py-0.5 border border-border rounded hover:bg-surface-hover">Copy</button>
                 </div>
                 <p className="text-sm whitespace-pre-wrap leading-relaxed">
-                  {r.document?.slice(0, 600)}
-                  {(r.document?.length || 0) > 600 && "…"}
+                  {highlightSnippet(r.document || "", query)}
                 </p>
               </div>
             ))}
