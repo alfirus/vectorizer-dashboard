@@ -12,10 +12,9 @@ import type {
 
 // All client-side calls go through the Next.js proxy (/api/vectorizer/*)
 // API key stays server-side — never exposed to the browser.
+// Chroma calls go through /api/chroma/* proxy.
 const PROXY = "/api/vectorizer";
-const CHROMA_URL = "http://localhost:8100";
-const CHROMA_TENANT = "default_tenant";
-const CHROMA_DB = "default_database";
+const CHROMA_PROXY = "/api/chroma";
 
 const jsonHeaders = { "Content-Type": "application/json" };
 
@@ -205,12 +204,11 @@ export async function addMessage(
   if (!res.ok) throw new Error(`Add message failed: ${res.status}`);
 }
 
-// ---- ChromaDB direct access (for embedding visualization) ----
-// These calls go to ChromaDB directly — no Vectorizer proxy needed.
+// ---- ChromaDB via proxy (keeps Chroma internal, no direct browser access) ----
 
 export async function getCollections(): Promise<ChromaCollection[]> {
   const res = await fetch(
-    `${CHROMA_URL}/api/v2/tenants/${CHROMA_TENANT}/databases/${CHROMA_DB}/collections`
+    `${CHROMA_PROXY}/api/v2/tenants/default_tenant/databases/default_database/collections`
   );
   return res.json();
 }
@@ -220,7 +218,7 @@ export async function getCollectionVectors(
   limit = 500
 ): Promise<ChromaGetResponse> {
   const res = await fetch(
-    `${CHROMA_URL}/api/v2/tenants/${CHROMA_TENANT}/databases/${CHROMA_DB}/collections/${collectionId}/get?limit=${limit}&include=embeddings,documents,metadatas`
+    `${CHROMA_PROXY}/api/v2/tenants/default_tenant/databases/default_database/collections/${collectionId}/get?limit=${limit}&include=embeddings,documents,metadatas`
   );
   return res.json();
 }
