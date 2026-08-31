@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getWorkspaces } from "@/lib/api";
+import { getSearchAnalytics, getWorkspaces } from "@/lib/api";
 import type { Workspace } from "@/lib/types";
 import {
   BarChart,
@@ -18,38 +18,51 @@ import {
 
 const COLORS = ["#6366f1", "#22d3ee", "#22c55e", "#f59e0b", "#ef4444", "#a855f7"];
 
+interface AnalyticsData {
+  total_workspaces: number;
+  total_documents: number;
+  workspaces: { workspace_id: string; document_count: number }[];
+}
+
 export default function AnalyticsPage() {
+  const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getWorkspaces()
-      .then((r) => setWorkspaces(r.workspaces || []))
+    Promise.all([getSearchAnalytics(), getWorkspaces()])
+      .then(([a, w]) => {
+        setAnalytics(a);
+        setWorkspaces(w.workspaces || []);
+      })
       .catch(console.error)
       .finally(() => setLoading(false));
   }, []);
 
-  const wsData = workspaces.map((ws) => ({
-    name: ws.id,
-    // We don't have doc counts in the list endpoint, so use 1 per workspace
-    // A real implementation would fetch stats for each
-    count: 1,
+  const wsData = (analytics?.workspaces || []).map((ws) => ({
+    name: ws.workspace_id,
+    count: ws.document_count,
   }));
 
-  // Role distribution placeholder (would come from API in real impl)
-  const roleData = [
-    { name: "User", value: 45 },
-    { name: "Assistant", value: 35 },
-    { name: "System", value: 20 },
-  ];
+  const totalDocs = analytics?.total_documents || 0;
 
-  // Activity timeline placeholder
+  // Build role distribution from workspace data (approximation based on doc counts)
+  const roleData = wsData.length > 0
+    ? wsData.map((ws) => ({ name: ws.name, value: ws.count }))
+    : [{ name: "No data", value: 1 }];
+
+  // Activity timeline — use real creation dates from workspaces
   const activityData = Array.from({ length: 7 }).map((_, i) => {
     const d = new Date();
     d.setDate(d.getDate() - (6 - i));
+    // Count workspaces created on each day
+    const dayStr = d.toISOString().split("T")[0];
+    const createdOnDay = workspaces.filter((ws) =>
+      ws.created_at && ws.created_at.startsWith(dayStr)
+    ).length;
     return {
       date: d.toLocaleDateString("en", { weekday: "short" }),
-      messages: Math.floor(Math.random() * 50) + 5,
+      messages: createdOnDay,
     };
   });
 
@@ -65,10 +78,31 @@ export default function AnalyticsPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Summary Stats */}
+          <div className="bg-surface border border-border rounded-lg p-4 lg:col-span-2">
+            <h2 className="text-sm font-semibold text-muted mb-3">Overview</h2>
+            <div className="grid grid-cols-3 gap-4 text-center">
+              <div>
+                <p className="text-2xl font-bold text-foreground">{analytics?.total_workspaces || 0}</p>
+                <p className="text-xs text-muted">Workspaces</p>
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-foreground">{totalDocs.toLocaleString()}</p>
+                <p className="text-xs text-muted">Total Documents</p>
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-foreground">
+                  {wsData.length > 0 ? Math.round(totalDocs / wsData.length) : 0}
+                </p>
+                <p className="text-xs text-muted">Avg Docs/Workspace</p>
+              </div>
+            </div>
+          </div>
+
           {/* Workspace Distribution */}
           <div className="bg-surface border border-border rounded-lg p-4">
             <h2 className="text-sm font-semibold text-muted mb-4">
-              Workspaces
+              Documents by Workspace
             </h2>
             {wsData.length === 0 ? (
               <p className="text-muted text-sm">No data.</p>
@@ -91,10 +125,10 @@ export default function AnalyticsPage() {
             )}
           </div>
 
-          {/* Role Distribution */}
+          {/* Workspace Proportion */}
           <div className="bg-surface border border-border rounded-lg p-4">
             <h2 className="text-sm font-semibold text-muted mb-4">
-              Message Roles
+              Workspace Proportion
             </h2>
             <ResponsiveContainer width="100%" height={250}>
               <PieChart>
@@ -122,28 +156,6 @@ export default function AnalyticsPage() {
                   }}
                 />
               </PieChart>
-            </ResponsiveContainer>
-          </div>
-
-          {/* Activity Timeline */}
-          <div className="bg-surface border border-border rounded-lg p-4 lg:col-span-2">
-            <h2 className="text-sm font-semibold text-muted mb-4">
-              Activity (Last 7 Days)
-            </h2>
-            <ResponsiveContainer width="100%" height={250}>
-              <BarChart data={activityData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1e1e2e" />
-                <XAxis dataKey="date" tick={{ fill: "#64748b", fontSize: 12 }} />
-                <YAxis tick={{ fill: "#64748b", fontSize: 12 }} />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "#12121a",
-                    border: "1px solid #1e1e2e",
-                    borderRadius: 8,
-                  }}
-                />
-                <Bar dataKey="messages" fill="#22d3ee" radius={[4, 4, 0, 0]} />
-              </BarChart>
             </ResponsiveContainer>
           </div>
         </div>

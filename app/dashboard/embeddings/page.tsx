@@ -86,7 +86,7 @@ export default function EmbeddingsPage() {
   useEffect(() => {
     if (!selected) return;
     setLoading(true);
-    getCollectionVectors(selected, 500)
+    getCollectionVectors(selected, 100)
       .then((data) => {
         if (!data.embeddings || data.embeddings.length === 0) {
           setPoints([]);

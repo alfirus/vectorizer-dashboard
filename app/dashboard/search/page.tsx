@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { searchMessages } from "@/lib/api";
+import { useState, useEffect } from "react";
+import { searchMessages, getWorkspaces } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 interface Hit {
@@ -9,22 +9,31 @@ interface Hit {
   score: number;
   document: string;
   metadata: Record<string, unknown>;
+  source?: string;
 }
 
 export default function SearchPage() {
   const [query, setQuery] = useState("");
-  const [workspace, setWorkspace] = useState("family");
+  const [workspace, setWorkspace] = useState("all");
+  const [workspaces, setWorkspaces] = useState<{ id: string; name: string }[]>([]);
   const [nResults, setNResults] = useState(10);
   const [results, setResults] = useState<Hit[]>([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
+
+  useEffect(() => {
+    getWorkspaces()
+      .then((r) => setWorkspaces(r.workspaces || []))
+      .catch(console.error);
+  }, []);
 
   const handleSearch = async () => {
     if (!query.trim()) return;
     setLoading(true);
     setSearched(true);
     try {
-      const res = await searchMessages(query, workspace, nResults);
+      const ws = workspace === "all" ? undefined : workspace;
+      const res = await searchMessages(query, ws, nResults);
       setResults(res.results || []);
     } catch (e) {
       console.error(e);
@@ -60,12 +69,18 @@ export default function SearchPage() {
         <div className="flex items-center gap-4 text-sm">
           <label className="flex items-center gap-2 text-muted">
             Workspace:
-            <input
-              type="text"
+            <select
               value={workspace}
               onChange={(e) => setWorkspace(e.target.value)}
-              className="bg-background border border-border rounded px-2 py-1 text-sm w-32 focus:outline-none focus:border-primary"
-            />
+              className="bg-background border border-border rounded px-2 py-1 text-sm focus:outline-none focus:border-primary"
+            >
+              <option value="all">All Workspaces</option>
+              {workspaces.map((ws) => (
+                <option key={ws.id} value={ws.id}>
+                  {ws.name || ws.id}
+                </option>
+              ))}
+            </select>
           </label>
           <label className="flex items-center gap-2 text-muted">
             Results:
@@ -119,6 +134,9 @@ export default function SearchPage() {
                     {r.source}
                   </span>
                 )}
+                <span className="text-xs text-muted font-mono">
+                  {String(r.metadata?.workspace_id || "").slice(0, 20)}
+                </span>
                 <span className="text-xs text-muted font-mono">
                   {String(r.metadata?.session_id || r.id).slice(0, 30)}
                 </span>

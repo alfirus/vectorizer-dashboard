@@ -141,7 +141,7 @@ export async function POST(req: Request) {
             Authorization: `Bearer ${LM_STUDIO_KEY}`,
           },
           body: JSON.stringify({
-            model: "qwen3.6-35b-a3b-uncensored-hauhaucs-aggressive",
+            model: process.env.LLM_MODEL || "qwen3.6-35b-a3b-uncensored-hauhaucs-aggressive",
             messages: [
               {
                 role: "system",

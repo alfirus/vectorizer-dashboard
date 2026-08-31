@@ -3,7 +3,7 @@ import { readFile } from "fs/promises";
 
 export const dynamic = "force-dynamic";
 
-const GRAPH_PATH = "C:/Users/alfir/SynologyDrive/ai/maisarah/vault/00-index/GRAPH.json";
+const GRAPH_PATH = process.env.GRAPH_PATH || "/data/ai/maisarah/vault/00-index/GRAPH.json";
 
 // Workspace detection from node source paths
 function detectWorkspace(node: Record<string, unknown>): string {
@@ -37,7 +37,7 @@ export async function GET(request: Request) {
       return NextResponse.json({
         ...graph,
         nodes: annotatedNodes,
-        workspaces: ["family", "sofia", "maisarah"],
+        workspaces: ["family", "sofia", "maisarah", "shiela"],
       });
     }
     

@@ -6,30 +6,26 @@ import type {
   BrainResponse,
   ChromaCollection,
   ChromaGetResponse,
+  WorkspaceHealth,
+  SearchAnalytics,
 } from "./types";
 
-const VECTORIZER_URL = "http://localhost:8091";
+// All client-side calls go through the Next.js proxy (/api/vectorizer/*)
+// API key stays server-side — never exposed to the browser.
+const PROXY = "/api/vectorizer";
 const CHROMA_URL = "http://localhost:8100";
-const LM_STUDIO_URL = "http://localhost:1234";
-const API_KEY = "vectorizer-local-key";
-const LM_STUDIO_KEY = process.env.NEXT_PUBLIC_LM_STUDIO_KEY || "";
 const CHROMA_TENANT = "default_tenant";
 const CHROMA_DB = "default_database";
 
-const vHeaders = {
-  "Content-Type": "application/json",
-  "X-API-Key": API_KEY,
-};
+const jsonHeaders = { "Content-Type": "application/json" };
 
 export async function getHealth(): Promise<HealthResponse> {
-  const res = await fetch(`${VECTORIZER_URL}/api/v1/health`);
+  const res = await fetch(`${PROXY}/health`);
   return res.json();
 }
 
 export async function getWorkspaces(): Promise<{ workspaces: Workspace[] }> {
-  const res = await fetch(`${VECTORIZER_URL}/api/v1/workspaces`, {
-    headers: vHeaders,
-  });
+  const res = await fetch(`${PROXY}/workspaces`, { headers: jsonHeaders });
   const data = await res.json();
 
   // Enrich with ChromaDB doc counts
@@ -55,7 +51,7 @@ export async function getMessages(
 ) {
   const params = new URLSearchParams({ workspace_id: workspaceId, limit: String(limit), offset: String(offset) });
   if (sessionId) params.set("session_id", sessionId);
-  const res = await fetch(`${VECTORIZER_URL}/api/v1/messages?${params}`, { headers: vHeaders });
+  const res = await fetch(`${PROXY}/messages?${params}`, { headers: jsonHeaders });
   const data = await res.json();
 
   // Normalize: API returns {document, metadata: {role, session_id, ...}}
@@ -76,28 +72,14 @@ export async function searchMessages(
   workspaceId?: string,
   nResults = 5
 ): Promise<SearchResponse> {
-  // If no workspace specified, search all workspaces in parallel
+  // Use /messages/search/all when no workspace specified — server handles parallel search + RRF merge
   if (!workspaceId) {
-    const workspaces = ["family", "sofia", "maisarah"];
-    const searchPromises = workspaces.map((ws) =>
-      fetch(`${VECTORIZER_URL}/api/v1/messages/search`, {
-        method: "POST",
-        headers: vHeaders,
-        body: JSON.stringify({ query, n_results: nResults, where: { workspace_id: ws } }),
-      }).then((r) => r.json())
-    );
-    const results = await Promise.all(searchPromises);
-    const allResults: SearchResult[] = [];
-    for (const data of results) {
-      if (data.results) allResults.push(...data.results);
-    }
-    allResults.sort((a, b) => (a.distance || 0) - (b.distance || 0));
-    return { count: allResults.length, results: allResults.slice(0, nResults) };
+    return searchAllWorkspaces(query, nResults);
   }
   const where: Record<string, string> = { workspace_id: workspaceId };
-  const res = await fetch(`${VECTORIZER_URL}/api/v1/messages/search`, {
+  const res = await fetch(`${PROXY}/messages/search`, {
     method: "POST",
-    headers: vHeaders,
+    headers: jsonHeaders,
     body: JSON.stringify({ query, n_results: nResults, where }),
   });
   return res.json();
@@ -113,11 +95,6 @@ export type BrainStreamEvent =
 
 /**
  * Stream brain answer via SSE. Yields parsed events as they arrive.
- * Usage:
- *   for await (const event of brainAskStream(question, workspaceId)) {
- *     if (event.type === "chunk") appendText(event.content);
- *     if (event.type === "sources") setSources(event.sources);
- *   }
  */
 export async function* brainAskStream(
   question: string,
@@ -197,9 +174,9 @@ export async function brainAsk(
 }
 
 export async function createWorkspace(name: string): Promise<{ workspace: Workspace }> {
-  const res = await fetch(`${VECTORIZER_URL}/api/v1/workspaces`, {
+  const res = await fetch(`${PROXY}/workspaces`, {
     method: "POST",
-    headers: vHeaders,
+    headers: jsonHeaders,
     body: JSON.stringify({ name }),
   });
   if (!res.ok) throw new Error(`Create workspace failed: ${res.status}`);
@@ -207,9 +184,9 @@ export async function createWorkspace(name: string): Promise<{ workspace: Worksp
 }
 
 export async function deleteWorkspace(id: string): Promise<void> {
-  const res = await fetch(`${VECTORIZER_URL}/api/v1/workspaces/${id}`, {
+  const res = await fetch(`${PROXY}/workspaces/${id}`, {
     method: "DELETE",
-    headers: vHeaders,
+    headers: jsonHeaders,
   });
   if (!res.ok) throw new Error(`Delete workspace failed: ${res.status}`);
 }
@@ -220,13 +197,16 @@ export async function addMessage(
   role: "user" | "assistant" | "system",
   content: string
 ): Promise<void> {
-  const res = await fetch(`${VECTORIZER_URL}/api/v1/messages`, {
+  const res = await fetch(`${PROXY}/messages`, {
     method: "POST",
-    headers: vHeaders,
+    headers: jsonHeaders,
     body: JSON.stringify({ workspace_id: workspaceId, session_id: sessionId, role, content }),
   });
   if (!res.ok) throw new Error(`Add message failed: ${res.status}`);
 }
+
+// ---- ChromaDB direct access (for embedding visualization) ----
+// These calls go to ChromaDB directly — no Vectorizer proxy needed.
 
 export async function getCollections(): Promise<ChromaCollection[]> {
   const res = await fetch(
@@ -245,15 +225,15 @@ export async function getCollectionVectors(
   return res.json();
 }
 
-// ---- New API functions for Phase 3 ----
+// ---- Proxy-based API functions ----
 
 export async function searchAllWorkspaces(
   query: string,
   nResults = 10
 ): Promise<SearchResponse> {
-  const res = await fetch(`${VECTORIZER_URL}/api/v1/messages/search/all`, {
+  const res = await fetch(`${PROXY}/messages/search/all`, {
     method: "POST",
-    headers: vHeaders,
+    headers: jsonHeaders,
     body: JSON.stringify({ query, n_results: nResults }),
   });
   return res.json();
@@ -263,15 +243,15 @@ export async function getWorkspaceHealth(
   workspaceId: string
 ): Promise<WorkspaceHealth> {
   const res = await fetch(
-    `${VECTORIZER_URL}/api/v1/workspaces/${workspaceId}/health`,
-    { headers: vHeaders }
+    `${PROXY}/workspaces/${workspaceId}/health`,
+    { headers: jsonHeaders }
   );
   return res.json();
 }
 
 export async function getSearchAnalytics(): Promise<SearchAnalytics> {
-  const res = await fetch(`${VECTORIZER_URL}/api/v1/messages/analytics`, {
-    headers: vHeaders,
+  const res = await fetch(`${PROXY}/messages/analytics`, {
+    headers: jsonHeaders,
   });
   return res.json();
 }

@@ -42,6 +42,7 @@ const WORKSPACE_COLORS: Record<string, string> = {
   family: "#8b5cf6",
   sofia: "#ec4899",
   maisarah: "#14b8a6",
+  shiela: "#f97316",
 };
 
 const RELATION_COLORS: Record<string, string> = {
