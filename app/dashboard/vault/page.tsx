@@ -1,10 +1,19 @@
 "use client";
 import { useEffect, useState } from "react";
-import { FolderOpen, RefreshCw, Search, Eye, Hash, FileText, Sparkles } from "lucide-react";
+import { FolderOpen, RefreshCw, Search, Eye, Hash, FileText, Sparkles, ChevronDown } from "lucide-react";
 
 interface VaultFile { path: string; hash: string; chunks: number; mtime?: string; }
 interface VaultStats { files: number; total_chunks: number; version: string; graph: { nodes: number; edges: number; byType: Record<string, number> }; }
 interface VaultFilePreview { path: string; content: string; meta: Record<string, unknown>; }
+interface ReindexProgress {
+  phase: string;
+  percent: number;
+  file: string;
+  current: number;
+  total: number;
+  message: string;
+  logs: string[];
+}
 
 export default function VaultPage() {
   const [stats, setStats] = useState<VaultStats | null>(null);
@@ -14,6 +23,7 @@ export default function VaultPage() {
   const [reindexing, setReindexing] = useState(false);
   const [reindexResult, setReindexResult] = useState<string | null>(null);
   const [reindexError, setReindexError] = useState<string | null>(null);
+  const [reindexProgress, setReindexProgress] = useState<ReindexProgress | null>(null);
   const [offset, setOffset] = useState(0); const limit = 50;
   const [preview, setPreview] = useState<VaultFilePreview | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -42,15 +52,116 @@ export default function VaultPage() {
   };
   useEffect(() => { load("", 0); /* eslint-disable-next-line */ }, []);
   const handleSearch = () => { setOffset(0); load(query, 0); };
+
   const handleReindex = async (dryRun: boolean) => {
-    setReindexing(true); setReindexResult(null); setReindexError(null);
+    setReindexing(true);
+    setReindexResult(null);
+    setReindexError(null);
+    setReindexProgress({ phase: "starting", percent: 0, file: "", current: 0, total: 0, message: "Starting...", logs: [] });
+
     try {
-      const res = await fetch("/api/admin/reindex", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dryRun }) });
-      const data = await res.json();
-      if (!res.ok || data.ok === false) { setReindexError(data.error || data.stderr || "Reindex failed"); if (data.stdout) setReindexResult(data.stdout); }
-      else { const out = data.vault?.stdout || ""; const gOut = data.graph?.stdout || ""; setReindexResult(`${out}\n${gOut ? `\n--- graph ---\n${gOut}` : ""}\n(${data.elapsed_ms}ms)`); if (!dryRun) load(query, offset); }
-    } catch (e: unknown) { setReindexError(e instanceof Error ? e.message : String(e)); } finally { setReindexing(false); }
+      const res = await fetch("/api/admin/reindex", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+        body: JSON.stringify({ dryRun }),
+        credentials: "include",
+      });
+
+      if (!res.ok || !res.body) {
+        throw new Error("Failed to start reindex");
+      }
+
+      const contentType = res.headers.get("content-type") || "";
+
+      // SSE streaming mode
+      if (contentType.includes("text/event-stream")) {
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const events = buffer.split("\n\n");
+          buffer = events.pop() || "";
+
+          for (const eventStr of events) {
+            if (!eventStr.trim()) continue;
+
+            const eventMatch = eventStr.match(/^event: (.+)$/m);
+            const dataMatch = eventStr.match(/^data: (.+)$/m);
+
+            if (!eventMatch || !dataMatch) continue;
+
+            const eventName = eventMatch[1];
+            const data = JSON.parse(dataMatch[1]);
+
+            switch (eventName) {
+              case "progress":
+                setReindexProgress(prev => prev ? {
+                  ...prev,
+                  phase: data.phase || prev.phase,
+                  percent: data.percent ?? prev.percent,
+                  file: data.file || prev.file,
+                  current: data.current ?? prev.current,
+                  total: data.total ?? prev.total,
+                  message: data.message || prev.message,
+                } : null);
+                break;
+              case "phase":
+                setReindexProgress(prev => prev ? {
+                  ...prev,
+                  phase: data.phase,
+                  message: data.message,
+                  file: "",
+                  percent: data.phase === "graph" ? -1 : 0,
+                } : null);
+                break;
+              case "log":
+                setReindexProgress(prev => prev ? {
+                  ...prev,
+                  logs: [...prev.logs.slice(-100), data.message],
+                } : null);
+                break;
+              case "vault_done":
+                setReindexProgress(prev => prev ? {
+                  ...prev,
+                  message: `✓ Indexed ${data.indexed} files, ${data.chunks} chunks`,
+                } : null);
+                break;
+              case "done":
+                setReindexResult(`Completed in ${data.elapsed_ms}ms`);
+                if (!dryRun) load(query, offset);
+                break;
+              case "error":
+                setReindexError(data.message);
+                break;
+            }
+          }
+        }
+      } else {
+        // JSON fallback
+        const data = await res.json();
+        if (!res.ok || data.ok === false) {
+          setReindexError(data.error || "Reindex failed");
+          if (data.stdout) setReindexResult(data.stdout);
+        } else {
+          const out = data.vault?.stdout || "";
+          const gOut = data.graph?.stdout || "";
+          setReindexResult(`${out}\n${gOut ? `\n--- graph ---\n${gOut}` : ""}\n(${data.elapsed_ms}ms)`);
+          if (!dryRun) load(query, offset);
+        }
+      }
+    } catch (e: unknown) {
+      setReindexError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setReindexing(false);
+      setTimeout(() => setReindexProgress(null), 5000);
+    }
   };
+
   const shortPath = (p: string) => p.replace(/^.*SynologyDrive\/ai\//, "").replace(/\\/g, "/");
 
   const vaultAvailable = stats !== null || files.length > 0;
@@ -71,13 +182,76 @@ export default function VaultPage() {
         )}
         {vaultAvailable && (
           <div className="flex gap-2">
-            <button onClick={() => handleReindex(true)} disabled={reindexing} className="flex-1 lg:flex-none inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-medium border border-border bg-card hover:bg-surface">Dry run</button>
+            <button onClick={() => handleReindex(true)} disabled={reindexing} className="flex-1 lg:flex-none inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-medium border border-border bg-card hover:bg-surface disabled:opacity-50">Dry run</button>
             <button onClick={() => handleReindex(false)} disabled={reindexing} className="flex-1 lg:flex-none inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold bg-primary text-white hover:bg-primary-hover disabled:opacity-50">
               <RefreshCw className={`w-4 h-4 ${reindexing ? "animate-spin" : ""}`} /> {reindexing ? "Reindexing…" : "Reindex"}
             </button>
           </div>
         )}
       </div>
+
+      {/* ─── Progress Bar ─── */}
+      {reindexProgress && (
+        <div className="bg-card border border-primary/30 rounded-2xl p-4 shadow-card animate-fadeIn">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <RefreshCw className="w-4 h-4 text-primary animate-spin" />
+              <span className="text-sm font-semibold text-foreground">
+                {reindexProgress.phase === "graph"
+                  ? "Rebuilding knowledge graph…"
+                  : reindexProgress.phase === "indexing"
+                  ? "Indexing vault files…"
+                  : reindexProgress.message}
+              </span>
+            </div>
+            {reindexProgress.percent >= 0 && (
+              <span className="text-sm font-mono font-bold text-primary tabular-nums">{reindexProgress.percent}%</span>
+            )}
+          </div>
+
+          {/* Progress bar track */}
+          <div className="w-full h-2.5 bg-surface rounded-full overflow-hidden mb-3">
+            {reindexProgress.percent >= 0 ? (
+              <div
+                className="h-full rounded-full transition-all duration-500 ease-out"
+                style={{
+                  width: `${reindexProgress.percent}%`,
+                  background: "linear-gradient(90deg, var(--color-primary), var(--color-primary-hover, var(--color-primary)))",
+                }}
+              />
+            ) : (
+              <div className="h-full rounded-full bg-primary animate-pulse" style={{ width: "100%" }} />
+            )}
+          </div>
+
+          {/* Status text */}
+          <div className="text-xs font-mono text-muted truncate mb-1">
+            {reindexProgress.file
+              ? <>📄 <span className="text-foreground/80">{reindexProgress.file}</span> <span className="text-muted/60">({reindexProgress.current}/{reindexProgress.total})</span></>
+              : reindexProgress.message}
+          </div>
+
+          {/* Vault done summary */}
+          {reindexProgress.message.startsWith("✓") && (
+            <div className="text-xs font-mono text-green-400 mt-1">{reindexProgress.message}</div>
+          )}
+
+          {/* Expandable log */}
+          {reindexProgress.logs.length > 0 && (
+            <details className="mt-2 group">
+              <summary className="text-xs text-muted cursor-pointer hover:text-foreground select-none flex items-center gap-1">
+                <ChevronDown className="w-3 h-3 transition-transform group-open:rotate-180" />
+                Show log ({reindexProgress.logs.length} lines)
+              </summary>
+              <div className="mt-2 max-h-32 overflow-auto bg-background border border-border rounded-xl p-2 space-y-0.5">
+                {reindexProgress.logs.slice(-30).map((log, i) => (
+                  <div key={i} className="text-[10px] font-mono text-muted/60 truncate">{log}</div>
+                ))}
+              </div>
+            </details>
+          )}
+        </div>
+      )}
 
       {stats && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
