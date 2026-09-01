@@ -35,6 +35,7 @@ export default function VaultPage() {
         fetch("/api/vault?action=stats").then(r => r.json()),
         fetch(`/api/vault?limit=${limit}&offset=${off}${q ? `&q=${encodeURIComponent(q)}` : ""}`).then(r => r.json()),
       ]);
+      if (sRes.vault_available === false) { setStats(null); setFiles([]); setTotal(0); setLoading(false); return; }
       if (sRes.files !== undefined) setStats(sRes);
       if (lRes.files) { setFiles(lRes.files); setTotal(lRes.total); }
     } catch (e) { console.error(e); } finally { setLoading(false); }
@@ -52,6 +53,8 @@ export default function VaultPage() {
   };
   const shortPath = (p: string) => p.replace(/^.*SynologyDrive\/ai\//, "").replace(/\\/g, "/");
 
+  const vaultAvailable = stats !== null || files.length > 0;
+
   return (
     <div className="space-y-4 animate-fadeIn">
       <div className="flex flex-col gap-3">
@@ -59,12 +62,21 @@ export default function VaultPage() {
           <h1 className="text-xl font-bold tracking-tight flex items-center gap-2"><FolderOpen className="w-5 h-5 text-primary" /> Vault</h1>
           <p className="text-sm text-muted mt-1">Markdown truth on SynologyDrive → 768d Nomic index.</p>
         </div>
-        <div className="flex gap-2">
-          <button onClick={() => handleReindex(true)} disabled={reindexing} className="flex-1 lg:flex-none inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-medium border border-border bg-card hover:bg-surface">Dry run</button>
-          <button onClick={() => handleReindex(false)} disabled={reindexing} className="flex-1 lg:flex-none inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold bg-primary text-white hover:bg-primary-hover disabled:opacity-50">
-            <RefreshCw className={`w-4 h-4 ${reindexing ? "animate-spin" : ""}`} /> {reindexing ? "Reindexing…" : "Reindex"}
-          </button>
-        </div>
+        {!vaultAvailable && !loading && (
+          <div className="bg-card border border-border rounded-2xl p-6 text-center">
+            <FolderOpen className="w-10 h-10 text-muted mx-auto mb-3" />
+            <p className="text-sm font-semibold mb-1">Vault not available on this server</p>
+            <p className="text-xs text-muted max-w-md mx-auto">Vault data lives on SynologyDrive (local machine). The reindex feature requires <code>vault_index.py</code> and the vault files which are only available locally.</p>
+          </div>
+        )}
+        {vaultAvailable && (
+          <div className="flex gap-2">
+            <button onClick={() => handleReindex(true)} disabled={reindexing} className="flex-1 lg:flex-none inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-medium border border-border bg-card hover:bg-surface">Dry run</button>
+            <button onClick={() => handleReindex(false)} disabled={reindexing} className="flex-1 lg:flex-none inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold bg-primary text-white hover:bg-primary-hover disabled:opacity-50">
+              <RefreshCw className={`w-4 h-4 ${reindexing ? "animate-spin" : ""}`} /> {reindexing ? "Reindexing…" : "Reindex"}
+            </button>
+          </div>
+        )}
       </div>
 
       {stats && (

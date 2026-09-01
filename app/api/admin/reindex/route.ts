@@ -40,7 +40,7 @@ export async function POST(request: Request) {
   const { vault, graph } = getScripts();
 
   if (!existsSync(vault)) {
-    return NextResponse.json({ error: `vault_index.py not found: ${vault}` }, { status: 404 });
+    return NextResponse.json({ ok: false, error: `vault_index.py not available on this server. Vault data lives on SynologyDrive (local).`, vault_script: vault, vault_exists: false }, { status: 200 });
   }
 
   const args: string[] = [vault];

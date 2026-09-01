@@ -57,7 +57,7 @@ export async function GET(request: Request) {
     if (action === "stats") {
       // Quick stats for vault tab header
       if (!existsSync(MEMORY_INDEX_PATH)) {
-        return NextResponse.json({ error: `MEMORY_INDEX not found at ${MEMORY_INDEX_PATH}` }, { status: 404 });
+        return NextResponse.json({ files: 0, total_chunks: 0, graph: { nodes: 0, edges: 0, byType: {} }, version: "n/a", vault_available: false });
       }
       const raw = await readFile(MEMORY_INDEX_PATH, "utf-8");
       const idx = JSON.parse(raw);
@@ -94,7 +94,7 @@ export async function GET(request: Request) {
 
     // Default: list files with pagination
     if (!existsSync(MEMORY_INDEX_PATH)) {
-      return NextResponse.json({ error: `MEMORY_INDEX not found at ${MEMORY_INDEX_PATH}` }, { status: 404 });
+      return NextResponse.json({ total: 0, offset: 0, limit, version: "n/a", files: [], vault_available: false });
     }
     const raw = await readFile(MEMORY_INDEX_PATH, "utf-8");
     const idx = JSON.parse(raw);
