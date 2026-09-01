@@ -13,7 +13,7 @@ const execFileAsync = promisify(execFile);
 // Guard: only allow from localhost (dashboard is localhost:8092 only)
 
 const VAULT_ROOT = process.env.VAULT_ROOT || "/data/ai";
-const PY = process.env.REINDEX_PYTHON || "python";
+const PY = process.env.REINDEX_PYTHON || "python3";
 
 function getScripts() {
   // Inside Docker: /data/ai/maisarah/vault/00-index/
