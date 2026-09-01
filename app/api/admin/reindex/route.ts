@@ -6,9 +6,8 @@ import { existsSync } from "fs";
 export const runtime = "nodejs";
 
 const execFileAsync = promisify(execFile);
-
 // Admin endpoint — triggers vault reindex + graph rebuild
-// POST /api/admin/reindex  { dryRun?: boolean }
+// POST /api/admin/reindex  { dryRun?: boolean, workspace?: string, reindex?: boolean }
 // Supports SSE streaming: send Accept: text/event-stream for real-time progress
 // Guard: only allow from localhost (dashboard is localhost:8092 only)
 
@@ -30,10 +29,15 @@ function getScripts() {
 }
 
 export async function POST(request: Request) {
+  const url = new URL(request.url);
+  const queryWorkspace = url.searchParams.get("workspace") || undefined;
+
   let body: Record<string, unknown> = {};
   try { body = await request.json(); } catch { /* empty body = full reindex */ }
   const dryRun = body.dryRun === true;
   const limit = typeof body.limit === "number" ? body.limit : undefined;
+  const forceReindex = body.reindex === true;
+  const workspace = (typeof body.workspace === "string" ? body.workspace : queryWorkspace) || undefined;
 
   const { vault, graph } = getScripts();
 
@@ -47,17 +51,19 @@ export async function POST(request: Request) {
   // SSE streaming mode
   const accept = request.headers.get("accept") || "";
   if (accept.includes("text/event-stream")) {
-    return streamReindex(vault, graph, dryRun, limit, request.signal);
+    return streamReindex(vault, graph, dryRun, limit, forceReindex, workspace, request.signal);
   }
 
   // Legacy JSON mode
-  const args: string[] = [vault];
+  const args: string[] = [];
   if (dryRun) args.push("--dry-run");
+  if (workspace) args.push("--workspace", workspace);
   if (limit) args.push("--limit", String(limit));
+  if (forceReindex) args.push("--reindex");
 
   const start = Date.now();
   try {
-    const { stdout, stderr } = await execFileAsync(PY, args, {
+    const { stdout, stderr } = await execFileAsync(PY, [vault, ...args], {
       timeout: 120_000,
       maxBuffer: 5 * 1024 * 1024,
     });
@@ -98,6 +104,8 @@ function streamReindex(
   graph: string,
   dryRun: boolean,
   limit?: number,
+  forceReindex?: boolean,
+  workspace?: string,
   signal?: AbortSignal
 ) {
   const encoder = new TextEncoder();
@@ -123,11 +131,13 @@ function streamReindex(
         // Phase 1: vault_index.py
         send("phase", { phase: "indexing", message: "Scanning vault files..." });
 
-        const args = [vault];
+        const args: string[] = [];
         if (dryRun) args.push("--dry-run");
+        if (workspace) args.push("--workspace", workspace);
         if (limit) args.push("--limit", String(limit));
+        if (forceReindex) args.push("--reindex");
 
-        await runScript(PY, args, 120_000, (line) => {
+        await runScript(PY, [vault, ...args], 120_000, (line) => {
           if (aborted) return;
           send("log", { message: line });
 
@@ -255,7 +265,7 @@ export async function GET() {
     vault_exists: existsSync(vault),
     graph_exists: existsSync(graph),
     python: PY,
-    usage: "POST { dryRun?: boolean, limit?: number }",
+    usage: "POST { dryRun?: boolean, workspace?: string, reindex?: boolean }",
     sse: "POST with Accept: text/event-stream for real-time progress",
   });
 }
