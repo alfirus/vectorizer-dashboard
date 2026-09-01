@@ -147,10 +147,15 @@ function streamReindex(
           const toIndexMatch = line.match(/To index: (\d+) files/);
           if (toIndexMatch && !totalFiles) totalFiles = parseInt(toIndexMatch[1]);
 
+          // Match actual indexing: "indexed path: +N chunks (batch N)"
           const indexMatch = line.match(/indexed (.+?): \+/);
-          if (indexMatch) {
+          // Match dry-run output: "[workspace file imp=N] path hash=... chunks=N"
+          const dryRunMatch = line.match(/\[\w+ file imp=\d+\]\s+(.+?)\s+hash=\S+\s+chunks=(\d+)/);
+
+          const matchedFile = indexMatch?.[1] || dryRunMatch?.[1];
+          if (matchedFile) {
             indexedCount++;
-            const fileName = indexMatch[1].split("/").pop() || indexMatch[1];
+            const fileName = matchedFile.split("/").pop() || matchedFile;
             const percent = totalFiles > 0 ? Math.round((indexedCount / totalFiles) * 100) : 0;
             send("progress", {
               phase: "indexing",
