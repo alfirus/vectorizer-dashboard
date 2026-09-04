@@ -6,7 +6,8 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard, FolderKanban, Database, Search, MessageCircle,
-  Boxes, Share2, BarChart3, Menu, X, Zap, Settings
+  Boxes, Share2, BarChart3, Menu, X, Zap, Settings,
+  Network, Hourglass, GitBranch
 } from "lucide-react";
 
 const nav = [
@@ -17,6 +18,9 @@ const nav = [
   { href: "/dashboard/rag", label: "RAG", icon: MessageCircle },
   { href: "/dashboard/embeddings", label: "Embeddings", icon: Boxes },
   { href: "/dashboard/graph", label: "Graph", icon: Share2 },
+  { href: "/dashboard/trace", label: "Trace", icon: Network },
+  { href: "/dashboard/stale", label: "Stale", icon: Hourglass },
+  { href: "/dashboard/code", label: "Code", icon: GitBranch },
   { href: "/dashboard/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];
