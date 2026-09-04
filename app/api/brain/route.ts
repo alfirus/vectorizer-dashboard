@@ -10,76 +10,61 @@ const vHeaders = {
 
 export const runtime = "nodejs";
 
-export async function POST(req: Request) {
-  const { question, workspaceId, hybrid } = await req.json() as { question: string; workspaceId?: string; hybrid?: boolean };
+// Relevance floor: Chroma cosine distance above this is treated as noise,
+// not context. Feeding noise to the LLM is how "What is my daughter's name"
+// got answered from Elizabeth's SOUL doc. Tune live via RAG_MAX_DISTANCE —
+// starting default 0.78 (nomic-768d; true hits typically score well below,
+// identity-doc junk in wrong workspaces scores ~0.8+).
+const MAX_DISTANCE = parseFloat(process.env.RAG_MAX_DISTANCE || "0.78");
 
-  // Determine which workspaces to search
-  // Bug fix: GET /workspaces never returned document_count (just {id,name,created_at}),
-  // so the old getWorkspaceDocCounts() always saw 0 and short-circuited with
-  // "No data found in any workspace" even though Chroma had 1500+ docs.
-  // Now we try document_count first, then fall back to GET /workspaces/:id stats
-  // and finally just use the workspace list if stats also fail.
-  let workspaces: string[];
-  if (workspaceId) {
-    workspaces = [workspaceId];
-  } else {
-    try {
-      const res = await fetch(`${VECTORIZER_URL}/api/v1/workspaces`, { headers: vHeaders });
-      const data = await res.json();
-      const ids: string[] = (data.workspaces || []).map((w: { id: string }) => w.id);
-      if (ids.length === 0) {
-        const enc = new TextEncoder();
-        const s = new ReadableStream({
-          start(c) {
-            c.enqueue(enc.encode(`data: ${JSON.stringify({ type: "sources", sources: [] })}\n\n`));
-            c.enqueue(enc.encode(`data: ${JSON.stringify({ type: "chunk", content: "No workspaces found. Create one first." })}\n\n`));
-            c.enqueue(enc.encode("data: [DONE]\n\n")); c.close();
-          },
-        });
-        return new Response(s, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" } });
-      }
-      // Try to filter to non-empty workspaces via stats, but don't block if stats fail
-      const statsResults = await Promise.allSettled(
-        ids.map((id) => fetch(`${VECTORIZER_URL}/api/v1/workspaces/${id}`, { headers: vHeaders }).then((r) => r.json()))
-      );
-      const nonEmpty: string[] = [];
-      let hadStats = false;
-      for (let i = 0; i < ids.length; i++) {
-        const r = statsResults[i];
-        if (r.status === "fulfilled") {
-          const v = r.value as { stats?: { document_count?: number }; document_count?: number };
-          const count = v.stats?.document_count ?? v.document_count;
-          if (typeof count === "number") {
-            hadStats = true;
-            if (count > 0) nonEmpty.push(ids[i]);
-            continue;
-          }
+interface ScoredHit {
+  document: string;
+  distance: number;
+  workspace_id: string;
+}
+
+// List non-empty workspace ids.
+// (Was inline: GET /workspaces never returned document_count, only
+// {id,name,created_at}, so doc-count filtering always saw 0. Now tries
+// document_count first, then GET /workspaces/:id stats, then keeps all.)
+async function listAllWorkspaceIds(): Promise<string[]> {
+  try {
+    const res = await fetch(`${VECTORIZER_URL}/api/v1/workspaces`, { headers: vHeaders });
+    const data = await res.json();
+    const ids: string[] = (data.workspaces || []).map((w: { id: string }) => w.id);
+    if (ids.length === 0) return [];
+    const statsResults = await Promise.allSettled(
+      ids.map((id) => fetch(`${VECTORIZER_URL}/api/v1/workspaces/${id}`, { headers: vHeaders }).then((r) => r.json()))
+    );
+    const nonEmpty: string[] = [];
+    let hadStats = false;
+    for (let i = 0; i < ids.length; i++) {
+      const r = statsResults[i];
+      if (r.status === "fulfilled") {
+        const v = r.value as { stats?: { document_count?: number }; document_count?: number };
+        const count = v.stats?.document_count ?? v.document_count;
+        if (typeof count === "number") {
+          hadStats = true;
+          if (count > 0) nonEmpty.push(ids[i]);
+          continue;
         }
-        // If stats endpoint failed or has no count, keep the workspace (don't filter)
-        if (!hadStats) nonEmpty.push(ids[i]);
       }
-      workspaces = hadStats ? nonEmpty : ids;
-      if (workspaces.length === 0) {
-        // All workspaces are empty according to stats — still let the LLM explain context is empty
-        // instead of the misleading "no data" message
-        const enc = new TextEncoder();
-        const s = new ReadableStream({
-          start(c) {
-            c.enqueue(enc.encode(`data: ${JSON.stringify({ type: "sources", sources: [] })}\n\n`));
-            c.enqueue(enc.encode(`data: ${JSON.stringify({ type: "chunk", content: "No documents found in any workspace yet. Try reindexing the vault or adding documents." })}\n\n`));
-            c.enqueue(enc.encode("data: [DONE]\n\n")); c.close();
-          },
-        });
-        return new Response(s, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" } });
-      }
-    } catch {
-      // Fallback: try known workspace names
-      workspaces = ["maisarah", "sofia", "family", "shiela"];
+      // If stats endpoint failed or has no count, keep the workspace (don't filter)
+      if (!hadStats) nonEmpty.push(ids[i]);
     }
+    return hadStats ? nonEmpty : ids;
+  } catch {
+    // Fallback: try known workspace names
+    return ["maisarah", "sofia", "family", "shiela"];
   }
+}
 
-  // Search all workspaces in parallel (hybrid flag forwarded as where.hybrid for BM25+RRF)
-  const searchPromises = workspaces.map((ws) =>
+// Fan out POST /messages/search over ids (hybrid flag forwarded as
+// where.hybrid for BM25+RRF), merge by distance, drop noise above the
+// relevance floor. Note: `r.distance ?? 1` — never `|| 1`, a perfect
+// distance of 0 is falsy and must not become 1.
+async function searchWorkspaces(question: string, ids: string[], hybrid: boolean): Promise<ScoredHit[]> {
+  const searchPromises = ids.map((ws) =>
     fetch(`${VECTORIZER_URL}/api/v1/messages/search`, {
       method: "POST",
       headers: vHeaders,
@@ -88,69 +73,102 @@ export async function POST(req: Request) {
         n_results: 5,
         where: hybrid ? { workspace_id: ws, hybrid: true } : { workspace_id: ws },
       }),
-    }).then((r) => r.json())
+    })
+      .then((r) => r.json())
+      .catch(() => ({}))
   );
 
   const results = await Promise.all(searchPromises);
 
-  // Merge and sort by relevance (lower distance = more relevant)
-  const allResults: { document: string; distance: number; workspace_id: string }[] = [];
+  const allResults: ScoredHit[] = [];
   for (let i = 0; i < results.length; i++) {
     if (results[i].results) {
       for (const r of results[i].results) {
         allResults.push({
           document: r.document,
-          distance: r.distance || 1,
-          workspace_id: workspaces[i],
+          distance: r.distance ?? 1,
+          workspace_id: ids[i],
         });
       }
     }
   }
 
   allResults.sort((a, b) => a.distance - b.distance);
-  const topResults = allResults.slice(0, 5);
-  const context = topResults.map((r) => r.document).join("\n");
+  return allResults.filter((r) => r.distance <= MAX_DISTANCE).slice(0, 5);
+}
 
-  if (!context) {
-    const encoder = new TextEncoder();
-    const stream = new ReadableStream({
-      start(controller) {
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "sources", sources: [] })}\n\n`));
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "chunk", content: "No relevant context found in your workspaces." })}\n\n`));
-        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-        controller.close();
-      },
-    });
-    return new Response(stream, {
-      headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        Connection: "keep-alive",
-      },
-    });
+// Small helper for terminal SSE replies (abstain / empty states).
+function sseReply(events: Record<string, unknown>[]) {
+  const enc = new TextEncoder();
+  const s = new ReadableStream({
+    start(c) {
+      for (const e of events) c.enqueue(enc.encode(`data: ${JSON.stringify(e)}\n\n`));
+      c.enqueue(enc.encode("data: [DONE]\n\n"));
+      c.close();
+    },
+  });
+  return new Response(s, {
+    headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" },
+  });
+}
+
+export async function POST(req: Request) {
+  const { question, workspaceId, hybrid } = await req.json() as { question: string; workspaceId?: string; hybrid?: boolean };
+
+  // Determine which workspaces to search
+  let workspaces: string[];
+  if (workspaceId) {
+    workspaces = [workspaceId];
+  } else {
+    workspaces = await listAllWorkspaceIds();
+    if (workspaces.length === 0) {
+      return sseReply([
+        { type: "sources", sources: [] },
+        { type: "chunk", content: "No workspaces found. Create one first." },
+      ]);
+    }
   }
+
+  let topResults = await searchWorkspaces(question, workspaces, !!hybrid);
+  let scopeLabel = workspaceId ? `workspace '${workspaceId}'` : "any workspace";
+
+  // Single-workspace fallback: scoped search found nothing relevant — the
+  // answer may live elsewhere (e.g. asked in 'elizabeth', fact in 'family').
+  // Expand to all workspaces before giving up.
+  if (topResults.length === 0 && workspaceId) {
+    const rest = (await listAllWorkspaceIds()).filter((id) => id !== workspaceId);
+    if (rest.length > 0) {
+      topResults = await searchWorkspaces(question, rest, !!hybrid);
+      if (topResults.length > 0) scopeLabel = `workspace '${workspaceId}', so I searched all workspaces`;
+    }
+  }
+
+  // Abstain: nothing passed the relevance floor. Do NOT call the LLM —
+  // generating from noise is the confabulation bug.
+  if (topResults.length === 0) {
+    return sseReply([
+      { type: "sources", sources: [] },
+      { type: "chunk", content: `I couldn't find anything relevant in ${scopeLabel}. Try a different workspace, rephrase, or reindex the vault.` },
+    ]);
+  }
+
+  const context = topResults.map((r) => r.document).join("\n");
 
   // Convert distance to score (1 = perfect match, 0 = unrelated)
   const sources = topResults.map((r) => ({
     content: r.document,
     score: Math.max(0, 1 - r.distance),
+    workspace_id: r.workspace_id,
   }));
 
-  // Call LM Studio with streaming — with Synth fallback if LM is slow/offline or only returns reasoning
+  // Call LM Studio with streaming — with generic snippet fallback if LM is
+  // slow/offline or only returns reasoning
   const encoder = new TextEncoder();
   // Extract a concise answer directly from retrieved context as fallback (fast, no LLM needed)
-  function synthAnswer(q: string, srcs: { content: string; score: number }[]): string | null {
-    const qLower = q.toLowerCase();
-    const wantsDaughter = qLower.includes("daughter") || qLower.includes("anak");
-    if (wantsDaughter) {
-      for (const s of srcs) {
-        const m = s.content.match(/Masfirah Lina Alfiqah/gi);
-        if (m) return `Your daughter is **Masfirah Lina Alfiqah**.`;
-      }
-    }
+  function synthAnswer(srcs: { content: string; score: number }[]): string | null {
     // Generic fallback: return the top source snippet when LLM is unavailable
     if (srcs.length > 0) {
-      const top = srcs[0].content.replace(/^\[.*?\]\\n/, "").split("\\n").slice(0, 6).join("\\n").trim();
+      const top = srcs[0].content.replace(/^\\[.*?\\]\\\\n/, "").split("\\\\n").slice(0, 6).join("\\\\n").trim();
       if (top.length > 40) return top.slice(0, 600);
     }
     return null;
@@ -163,7 +181,7 @@ export async function POST(req: Request) {
 
         let gotContent = false;
         let answerBuffer = "";
-        const fallback = synthAnswer(question, sources);
+        const fallback = synthAnswer(sources);
         const llmPromise = (async () => {
           const res = await fetch(`${LM_STUDIO_URL}/v1/chat/completions`, {
             method: "POST",
@@ -177,7 +195,7 @@ export async function POST(req: Request) {
                 {
                   role: "system",
                   content:
-                    "You are an assistant answering questions based on the provided memory context. Answer concisely and directly. Use only information from the context when possible. If the answer is not in the context, say so. Do not wrap your answer in reasoning tags. Output only the final answer.",
+                    "You are an assistant answering questions based on the provided memory context. Answer concisely and directly. Use only information from the context. If the answer is not in the context, say so explicitly — never guess, and never answer from identity documents that don't address the question. Do not wrap your answer in reasoning tags. Output only the final answer.",
                 },
                 {
                   role: "user",
@@ -260,7 +278,7 @@ export async function POST(req: Request) {
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : "LLM request failed";
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "error", error: msg })}\n\n`));
-        const fb = synthAnswer(question, sources);
+        const fb = synthAnswer(sources);
         if (fb) controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "chunk", content: fb })}\n\n`));
         controller.enqueue(encoder.encode("data: [DONE]\n\n"));
         controller.close();
