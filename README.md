@@ -14,9 +14,10 @@ Next.js 14 + Tailwind + shadcn — ops UI for [Vectorizer](../vectorizer) (seman
 - **Workspaces** — `GET /workspaces` + per-collection `GET /collections/:id/count` → workspace document counts. Creates/deletes workspaces.
 - **Vault explorer** — `GET /api/vault?action=stats|files|tree|graph` → `MEMORY_INDEX.json + GRAPH.json`. Dry-run diff, reindex trigger with **real-time SSE progress bar**.
 - **Semantic search** — `POST /messages/search` with workspace filter + `where.hybrid=true` toggle, highlight + copy per hit, latency sparkline.
-- **Ask RAG** — `POST /api/brain` → Vectorizer search (5 sources) → LM Studio `qwen3.6-35b` streaming; strips `<think>` + falls back to synth answer from context when LM cold. Sources collapsible with copy.
+- **Ask RAG** — `POST /api/brain` → single-workspace Vectorizer search (floored, merged) → LM Studio `qwen3.6-35b` streaming; strips `<think>`, **abstains when nothing passes the relevance floor** instead of confabulating, falls back to synth answer from context when LM cold (no regex name-injection — that class of bug is dead). Sources collapsible with copy.
 - **Embeddings** — `GET /collections` + `GET .../collections/:id/get` with `include=embeddings,documents,metadatas`. Dimension + sample vectors.
 - **Knowledge graph** — `GRAPH.json` nodes/edges → `recharts` force-ish + BFS neighbors; stats 1419/7479.
+- **Provenance + code index via proxy** — no dedicated pages yet, but the generic `app/api/vectorizer/[...path]` proxy forwards everything: `GET conclusions/trace|stale|brief`, `PUT messages/:id {sections}`, `POST code/index`, `GET code/symbols|callers` all work through `/api/vectorizer/...` today (e.g. `GET /api/vectorizer/conclusions/brief?workspace_id=family`).
 - **Analytics** — `GET /search/analytics` + workspace doc distribution + query latency bars.
 - **Settings** — **Cron schedules** (reindex 1h, backup 7d 03:00, health 5m) — `ON/OFF` + cron expr → `cron_schedules.json`. **Telegram** alerts + **Email SMTP** + **Backup retention**. All writes to Vectorizer `.env` server-side, secrets masked in UI.
 
