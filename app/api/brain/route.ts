@@ -273,11 +273,14 @@ export async function POST(req: Request) {
 
           const reader = res.body?.getReader();
           if (!reader) throw new Error("No LLM response body");
+          console.log(`[brain] LLM fetch ok=${res.ok} status=${res.status}`);
           const decoder = new TextDecoder();
           let buffer = "";
+          let dbgReads = 0, dbgBytes = 0, dbgLines = 0, dbgThink = 0, dbgCont = 0;
           while (true) {
             const { done, value } = await reader.read();
             if (done) break;
+            dbgReads++; dbgBytes += value.length;
             buffer += decoder.decode(value, { stream: true });
             const lines = buffer.split("\n");
             buffer = lines.pop() || "";
@@ -294,10 +297,12 @@ export async function POST(req: Request) {
                 const reasoning = p.choices?.[0]?.delta?.reasoning_content ?? p.choices?.[0]?.message?.reasoning_content;
                 if (!delta && reasoning) {
                   // Accumulate thinking — harvested below if content never arrives
+                  dbgThink++;
                   reasoningBuffer += reasoning;
                   continue;
                 }
                 if (delta) {
+                  dbgCont++;
                   // Strip any leaked <think> tags
                   delta = delta.replace(/<think>[\s\S]*?<\/think>/g, "").replace(/<think>[\s\S]*/g, "");
                   if (!delta.trim()) continue;
@@ -308,6 +313,7 @@ export async function POST(req: Request) {
               } catch {}
             }
           }
+          console.log(`[brain] stream done reads=${dbgReads} bytes=${dbgBytes} think=${dbgThink} content=${dbgCont} gotContent=${gotContent}`);
         })();
 
         // Race LLM against a timeout — Qwen-35b needs ~30-60s (long think phase
