@@ -161,7 +161,17 @@ export async function POST(req: Request) {
     ]);
   }
 
-  const context = topResults.map((r) => r.document).join("\n");
+  // Build LLM context from the top-3 hits, truncated per-doc. Full 5-doc
+  // context (incl. multi-KB JSON blobs like the AGS menu) bloats the prompt
+  // and sends Qwen-35b into a minute-long think that always loses the SSE
+  // race — seen 2026-09-05: daughter question dumped the doc while the model
+  // answered a one-line context cleanly in 12s. Top hit carries the answer;
+  // the rest is supporting context. 1500 chars keeps markdown docs whole
+  // while cutting JSON noise.
+  const context = topResults
+    .slice(0, 3)
+    .map((r) => (r.document.length > 1500 ? r.document.slice(0, 1500) + "\n[…truncated]" : r.document))
+    .join("\n");
 
   // Convert distance to score (1 = perfect match, 0 = unrelated)
   const sources = topResults.map((r) => ({
