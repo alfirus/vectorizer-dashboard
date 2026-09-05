@@ -323,6 +323,9 @@ export async function POST(req: Request) {
         // 2. top-source snippet (previous behaviour)
         if (!gotContent) {
           const harvested = harvestReasoning(reasoningBuffer);
+          // Debug: which fallback fired + how much thinking was captured.
+          // Remove once the daughter-name question answers straight.
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "chunk", content: `[debug path=${harvested ? "harvested" : "doc-fallback"} thinkChars=${reasoningBuffer.length}] ` })}\n\n`));
           if (harvested) {
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "chunk", content: harvested })}\n\n`));
           } else if (fallback) {
