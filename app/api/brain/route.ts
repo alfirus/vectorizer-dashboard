@@ -199,6 +199,7 @@ export async function POST(req: Request) {
       /extract answer[^:]*:\s*([^.!?✅]{3,200})/i,
       /(?:the\s+)?(?:answer is|answer:|conclusion:?)\s*(?:->\s*)?([^.!?✅]{3,200})/i,
       /(?:context says|according to[^,]{0,60},?)\s*([^.!?✅]{3,200})/i,
+      /(?:daughter'?s name|final output|^name)\s*:\s*([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+){0,4})/im,
       /(?:daughter'?s name is|name is)\s*([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+){0,4})/,
     ];
     for (const re of patterns) {
@@ -257,7 +258,10 @@ export async function POST(req: Request) {
                 },
               ],
               temperature: 0.2,
-              max_tokens: 512,
+              // Qwen-35b burns the whole budget on thinking (~500 tokens) and
+              // content sometimes never arrives — seen 2026-09-05. 1024 gives
+              // the think phase room AND leaves space for the actual answer.
+              max_tokens: 1024,
               stream: true,
             }),
           });
