@@ -186,11 +186,13 @@ export async function POST(req: Request) {
       /(?:context says|according to[^,]{0,60},?)\s*([^.!?]{3,200}[.!?]?)/i,
     ];
     for (const re of patterns) {
-      const matches = [...text.matchAll(new RegExp(re.source, re.flags + "g"))];
-      if (matches.length > 0) {
-        const last = (matches[matches.length - 1][1] || "").trim();
-        if (last.length > 2) return last;
+      const rx = new RegExp(re.source, re.flags + "g");
+      let m: RegExpExecArray | null;
+      let last = "";
+      while ((m = rx.exec(text)) !== null) {
+        if (m[1]) last = m[1].trim();
       }
+      if (last.length > 2) return last;
     }
     return null;
   }
