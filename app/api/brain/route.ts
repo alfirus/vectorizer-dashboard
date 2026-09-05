@@ -174,6 +174,26 @@ export async function POST(req: Request) {
   // slow/offline or only returns reasoning
   const encoder = new TextEncoder();
   // Extract a concise answer directly from retrieved context as fallback (fast, no LLM needed)
+  // Harvest a plain answer from the thinking transcript when the model timed
+  // out before producing content. Thinking usually restates the key fact
+  // ("The context says X is ...", "So the answer is ..."). Prefer the last
+  // such match — early thinking is exploration, late thinking is conclusion.
+  function harvestReasoning(transcript: string): string | null {
+    if (!transcript || transcript.length < 20) return null;
+    const text = transcript.replace(/<think>|<\/think>/g, " ").replace(/\s+/g, " ").trim();
+    const patterns = [
+      /(?:answer is|answer:|conclusion:?)\s*([^.!?]{3,200}[.!?]?)/i,
+      /(?:context says|according to[^,]{0,60},?)\s*([^.!?]{3,200}[.!?]?)/i,
+    ];
+    for (const re of patterns) {
+      const matches = [...text.matchAll(new RegExp(re.source, re.flags + "g"))];
+      if (matches.length > 0) {
+        const last = (matches[matches.length - 1][1] || "").trim();
+        if (last.length > 2) return last;
+      }
+    }
+    return null;
+  }
   function synthAnswer(srcs: { content: string; score: number }[]): string | null {
     // Generic fallback: return the top source snippet when LLM is unavailable
     if (srcs.length > 0) {
@@ -190,6 +210,13 @@ export async function POST(req: Request) {
 
         let gotContent = false;
         let answerBuffer = "";
+        // Reasoning transcript: Qwen-35b streams ~150 thinking tokens before
+        // any content. If the 12s timeout hits mid-think, gotContent stays
+        // false and the user gets a raw document dump instead of an answer.
+        // Harvest the transcript as a last resort — the answer is usually in
+        // there ("...is Masfirah Lina Alfiqah"). Seen 2026-09-05: daughter-name
+        // question fell back to doc dump while "qah" sat in reasoning.
+        let reasoningBuffer = "";
         const fallback = synthAnswer(sources);
         const llmPromise = (async () => {
           const res = await fetch(`${LM_STUDIO_URL}/v1/chat/completions`, {
@@ -244,7 +271,8 @@ export async function POST(req: Request) {
                   p.choices?.[0]?.delta?.content ?? p.choices?.[0]?.message?.content;
                 const reasoning = p.choices?.[0]?.delta?.reasoning_content ?? p.choices?.[0]?.message?.reasoning_content;
                 if (!delta && reasoning) {
-                  // Skip verbose reasoning dumps; only use as last resort
+                  // Accumulate thinking — harvested below if content never arrives
+                  reasoningBuffer += reasoning;
                   continue;
                 }
                 if (delta) {
@@ -267,9 +295,14 @@ export async function POST(req: Request) {
           if (!gotContent) controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "error", error: msg })}\n\n`));
         }), timeout]);
 
-        // If LLM timed out or produced no content, use synth fallback
+        // If LLM timed out or produced no content, harvest in order:
+        // 1. reasoning transcript (thinking usually states the answer plainly)
+        // 2. top-source snippet (previous behaviour)
         if (!gotContent) {
-          if (fallback) {
+          const harvested = harvestReasoning(reasoningBuffer);
+          if (harvested) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "chunk", content: harvested })}\n\n`));
+          } else if (fallback) {
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "chunk", content: fallback })}\n\n`));
           } else {
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "chunk", content: "I found relevant context but the language model timed out. Here are the sources — answer is in the context above." })}\n\n`));
