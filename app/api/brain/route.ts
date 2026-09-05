@@ -1,5 +1,5 @@
 const VECTORIZER_URL = process.env.VECTORIZER_URL || "http://vectorizer:8091";
-const LM_STUDIO_URL = process.env.LM_STUDIO_URL || process.env.OAI_COMPATIBLE_URL || "http://host.docker.internal:1234/v1";
+const LM_STUDIO_URL = (process.env.LM_STUDIO_URL || process.env.OAI_COMPATIBLE_URL || "http://host.docker.internal:1234/v1").replace(/\/+$/, "").replace(/\/v1$/, "");
 const LM_STUDIO_KEY = process.env.LM_STUDIO_KEY || process.env.LM_STUDIO_API_KEY || process.env.OAI_API_KEY || "";
 const API_KEY = process.env.VECTORIZER_API_KEY || "vectorizer-local-key";
 
@@ -273,16 +273,11 @@ export async function POST(req: Request) {
 
           const reader = res.body?.getReader();
           if (!reader) throw new Error("No LLM response body");
-          console.log(`[brain] LLM fetch ok=${res.ok} status=${res.status}`);
           const decoder = new TextDecoder();
           let buffer = "";
-          let dbgReads = 0, dbgBytes = 0, dbgLines = 0, dbgThink = 0, dbgCont = 0;
-          let dbgFirst = "";
           while (true) {
             const { done, value } = await reader.read();
             if (done) break;
-            dbgReads++; dbgBytes += value.length;
-            if (!dbgFirst) dbgFirst = decoder.decode(value).slice(0, 120);
             buffer += decoder.decode(value, { stream: true });
             const lines = buffer.split("\n");
             buffer = lines.pop() || "";
@@ -299,12 +294,10 @@ export async function POST(req: Request) {
                 const reasoning = p.choices?.[0]?.delta?.reasoning_content ?? p.choices?.[0]?.message?.reasoning_content;
                 if (!delta && reasoning) {
                   // Accumulate thinking — harvested below if content never arrives
-                  dbgThink++;
                   reasoningBuffer += reasoning;
                   continue;
                 }
                 if (delta) {
-                  dbgCont++;
                   // Strip any leaked <think> tags
                   delta = delta.replace(/<think>[\s\S]*?<\/think>/g, "").replace(/<think>[\s\S]*/g, "");
                   if (!delta.trim()) continue;
@@ -315,7 +308,6 @@ export async function POST(req: Request) {
               } catch {}
             }
           }
-          console.log(`[brain] stream done reads=${dbgReads} bytes=${dbgBytes} think=${dbgThink} content=${dbgCont} gotContent=${gotContent} first=${JSON.stringify(dbgFirst)}`);
         })();
 
         // Race LLM against a timeout — Qwen-35b needs ~30-60s (long think phase
@@ -331,9 +323,6 @@ export async function POST(req: Request) {
         // 2. top-source snippet (previous behaviour)
         if (!gotContent) {
           const harvested = harvestReasoning(reasoningBuffer);
-          // Debug: which fallback fired + how much thinking was captured.
-          // Remove once the daughter-name question answers straight.
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "chunk", content: `[debug path=${harvested ? "harvested" : "doc-fallback"} thinkChars=${reasoningBuffer.length}] ` })}\n\n`));
           if (harvested) {
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "chunk", content: harvested })}\n\n`));
           } else if (fallback) {
