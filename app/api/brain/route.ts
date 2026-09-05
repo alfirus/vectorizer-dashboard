@@ -180,10 +180,16 @@ export async function POST(req: Request) {
   // such match — early thinking is exploration, late thinking is conclusion.
   function harvestReasoning(transcript: string): string | null {
     if (!transcript || transcript.length < 20) return null;
-    const text = transcript.replace(/<think>|<\/think>/g, " ").replace(/\s+/g, " ").trim();
+    const text = transcript.replace(/<think>|<\/think>/g, " ").replace(/\*\*/g, "").replace(/\s+/g, " ").trim();
     const patterns = [
-      /(?:answer is|answer:|conclusion:?)\s*([^.!?]{3,200}[.!?]?)/i,
-      /(?:context says|according to[^,]{0,60},?)\s*([^.!?]{3,200}[.!?]?)/i,
+      // Qwen-35b shape seen 2026-09-05: "Extract Answer from Context: The
+      // daughter's name is Masfirah Lina Alfiqah." — none of the generic
+      // "answer is / context says" phrasings appear, so match the step label
+      // and the "<relation> name is <Name>" sentence directly.
+      /extract answer[^:]*:\s*([^.!?✅]{3,200})/i,
+      /(?:the\s+)?(?:answer is|answer:|conclusion:?)\s*(?:->\s*)?([^.!?✅]{3,200})/i,
+      /(?:context says|according to[^,]{0,60},?)\s*([^.!?✅]{3,200})/i,
+      /(?:daughter'?s name is|name is)\s*([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+){0,4})/,
     ];
     for (const re of patterns) {
       const rx = new RegExp(re.source, re.flags + "g");
@@ -192,7 +198,7 @@ export async function POST(req: Request) {
       while ((m = rx.exec(text)) !== null) {
         if (m[1]) last = m[1].trim();
       }
-      if (last.length > 2) return last;
+      if (last.length > 2) return last.replace(/[✅✔]/g, "").trim();
     }
     return null;
   }
@@ -290,8 +296,9 @@ export async function POST(req: Request) {
           }
         })();
 
-        // Race LLM against a timeout — if LM Studio is slow/cold, return synth answer
-        const timeout = new Promise<void>((resolve) => setTimeout(resolve, 12000));
+        // Race LLM against a timeout — Qwen-35b needs ~30-60s (long think phase
+        // before content), so allow 45s before harvesting reasoning/fallback
+        const timeout = new Promise<void>((resolve) => setTimeout(resolve, 45000));
         await Promise.race([llmPromise.catch((e: unknown) => {
           const msg = e instanceof Error ? e.message : String(e);
           if (!gotContent) controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "error", error: msg })}\n\n`));
