@@ -27,6 +27,15 @@ interface ScoredHit {
 // (Was inline: GET /workspaces never returned document_count, only
 // {id,name,created_at}, so doc-count filtering always saw 0. Now tries
 // document_count first, then GET /workspaces/:id stats, then keeps all.)
+//
+// Code workspaces (code_*) are EXCLUDED — raw symbol/TSX chunks poison chat
+// answers (seen 2026-09-05: "What is my daughter's name" answered from
+// pilotv4 dashboard JSX). Code is for /code/symbols|callers, not RAG chat.
+// If the user explicitly picks a code workspace in the dropdown, that choice
+// is respected — this filter applies only to the "all workspaces" fan-out.
+function isChatWorkspace(id: string): boolean {
+  return !id.startsWith("code_");
+}
 async function listAllWorkspaceIds(): Promise<string[]> {
   try {
     const res = await fetch(`${VECTORIZER_URL}/api/v1/workspaces`, { headers: vHeaders });
@@ -120,7 +129,7 @@ export async function POST(req: Request) {
   if (workspaceId) {
     workspaces = [workspaceId];
   } else {
-    workspaces = await listAllWorkspaceIds();
+    workspaces = (await listAllWorkspaceIds()).filter(isChatWorkspace);
     if (workspaces.length === 0) {
       return sseReply([
         { type: "sources", sources: [] },
@@ -136,7 +145,7 @@ export async function POST(req: Request) {
   // answer may live elsewhere (e.g. asked in 'elizabeth', fact in 'family').
   // Expand to all workspaces before giving up.
   if (topResults.length === 0 && workspaceId) {
-    const rest = (await listAllWorkspaceIds()).filter((id) => id !== workspaceId);
+    const rest = (await listAllWorkspaceIds()).filter((id) => id !== workspaceId && isChatWorkspace(id));
     if (rest.length > 0) {
       topResults = await searchWorkspaces(question, rest, !!hybrid);
       if (topResults.length > 0) scopeLabel = `workspace '${workspaceId}', so I searched all workspaces`;
