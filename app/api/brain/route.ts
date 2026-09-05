@@ -277,10 +277,12 @@ export async function POST(req: Request) {
           const decoder = new TextDecoder();
           let buffer = "";
           let dbgReads = 0, dbgBytes = 0, dbgLines = 0, dbgThink = 0, dbgCont = 0;
+          let dbgFirst = "";
           while (true) {
             const { done, value } = await reader.read();
             if (done) break;
             dbgReads++; dbgBytes += value.length;
+            if (!dbgFirst) dbgFirst = decoder.decode(value).slice(0, 120);
             buffer += decoder.decode(value, { stream: true });
             const lines = buffer.split("\n");
             buffer = lines.pop() || "";
@@ -313,7 +315,7 @@ export async function POST(req: Request) {
               } catch {}
             }
           }
-          console.log(`[brain] stream done reads=${dbgReads} bytes=${dbgBytes} think=${dbgThink} content=${dbgCont} gotContent=${gotContent}`);
+          console.log(`[brain] stream done reads=${dbgReads} bytes=${dbgBytes} think=${dbgThink} content=${dbgCont} gotContent=${gotContent} first=${JSON.stringify(dbgFirst)}`);
         })();
 
         // Race LLM against a timeout — Qwen-35b needs ~30-60s (long think phase
