@@ -8,6 +8,11 @@ import type {
   ChromaGetResponse,
   WorkspaceHealth,
   SearchAnalytics,
+  Metrics,
+  Session,
+  Webhook,
+  ApiKey,
+  ActivityData,
 } from "./types";
 
 // All client-side calls go through the Next.js proxy (/api/vectorizer/*)
@@ -340,4 +345,109 @@ export async function temporalSearch(
     source: "temporal",
   }));
   return { count: results.length, results };
+}
+
+// ---- Activity Dashboard ----
+
+/** Parse Prometheus text metrics into structured object */
+function parseMetrics(text: string): Metrics {
+  const metrics: Metrics = { messages_added: 0, searches_total: 0, deriver_drops: 0, deriver_queue_depth: 0 };
+  for (const line of text.split("\n")) {
+    if (line.startsWith("#") || !line.trim()) continue;
+    const match = line.match(/^(\w+)\s+(\d+)/);
+    if (match) {
+      const [, key, val] = match;
+      if (key === "vectorizer_messages_total") metrics.messages_added = Number(val);
+      else if (key === "vectorizer_searches_total") metrics.searches_total = Number(val);
+      else if (key === "vectorizer_deriver_drops_total") metrics.deriver_drops = Number(val);
+      else if (key === "vectorizer_deriver_queue_depth") metrics.deriver_queue_depth = Number(val);
+    }
+  }
+  return metrics;
+}
+
+export async function getMetrics(): Promise<Metrics> {
+  const res = await fetch(`${PROXY}/metrics`);
+  const text = await res.text();
+  return parseMetrics(text);
+}
+
+export async function getSessions(): Promise<{ sessions: Session[] }> {
+  const res = await fetch(`${PROXY}/sessions`, { headers: jsonHeaders });
+  return res.json();
+}
+
+export async function getWebhooks(): Promise<{ webhooks: Webhook[] }> {
+  const res = await fetch(`${PROXY}/webhooks`, { headers: jsonHeaders });
+  return res.json();
+}
+
+export async function getApiKeys(): Promise<{ keys: ApiKey[] }> {
+  const res = await fetch(`${PROXY}/keys`, { headers: jsonHeaders });
+  return res.json();
+}
+
+/** Get all recent messages across all workspaces (for activity feed) */
+export async function getRecentMessages(limit = 20): Promise<{ messages: import("./types").Message[] }> {
+  // Fetch from all workspaces in parallel
+  const ws = await getWorkspaces();
+  const allMessages: import("./types").Message[] = [];
+  const fetches = (ws.workspaces || []).map(async (w) => {
+    try {
+      const msgs = await getMessages(w.id, undefined, limit, 0);
+      return msgs.messages || [];
+    } catch { return []; }
+  });
+  const results = await Promise.allSettled(fetches);
+  for (const r of results) {
+    if (r.status === "fulfilled") allMessages.push(...r.value);
+  }
+  // Sort by timestamp descending, take top N
+  allMessages.sort((a, b) => {
+    const ta = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+    const tb = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+    return tb - ta;
+  });
+  return { messages: allMessages.slice(0, limit) };
+}
+
+/** Aggregate all activity data in one call (for the activity page) */
+export async function getActivity(): Promise<ActivityData> {
+  const [health, metricsText, workspacesData, sessionsData, webhooksData, keysData] = await Promise.all([
+    getHealth(),
+    fetch(`${PROXY}/metrics`).then(r => r.text()),
+    getWorkspaces(),
+    getSessions().catch(() => ({ sessions: [] as Session[] })),
+    getWebhooks().catch(() => ({ webhooks: [] as Webhook[] })),
+    getApiKeys().catch(() => ({ keys: [] as ApiKey[] })),
+  ]);
+
+  const metrics = parseMetrics(metricsText);
+
+  // Fetch recent messages from all workspaces
+  const allMessages: import("./types").Message[] = [];
+  const fetches = (workspacesData.workspaces || []).map(async (w) => {
+    try { return (await getMessages(w.id, undefined, 10, 0)).messages || []; }
+    catch { return []; }
+  });
+  const msgResults = await Promise.allSettled(fetches);
+  for (const r of msgResults) {
+    if (r.status === "fulfilled") allMessages.push(...r.value);
+  }
+  allMessages.sort((a, b) => {
+    const ta = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+    const tb = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+    return tb - ta;
+  });
+
+  return {
+    health,
+    metrics,
+    workspaces: workspacesData.workspaces || [],
+    recentMessages: allMessages.slice(0, 30),
+    sessions: sessionsData.sessions || [],
+    webhooks: webhooksData.webhooks || [],
+    apiKeys: keysData.keys || [],
+    timestamp: new Date().toISOString(),
+  };
 }

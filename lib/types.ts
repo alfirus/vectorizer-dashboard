@@ -63,6 +63,47 @@ export interface BrainResponse {
   sources?: { content: string; score: number }[];
 }
 
+// Activity / Metrics types
+
+export interface Metrics {
+  messages_added: number;
+  searches_total: number;
+  deriver_drops: number;
+  deriver_queue_depth: number;
+}
+
+export interface Session {
+  id: string;
+  workspace_id: string;
+  created_at: string;
+  message_count?: number;
+}
+
+export interface Webhook {
+  id: string;
+  url: string;
+  events: string[];
+  workspace_id?: string;
+}
+
+export interface ApiKey {
+  id: string;
+  key: string;
+  created_at: string;
+  workspace_id?: string;
+}
+
+export interface ActivityData {
+  health: HealthResponse;
+  metrics: Metrics;
+  workspaces: Workspace[];
+  recentMessages: Message[];
+  sessions: Session[];
+  webhooks: Webhook[];
+  apiKeys: ApiKey[];
+  timestamp: string;
+}
+
 // ChromaDB types
 
 export interface ChromaCollection {
