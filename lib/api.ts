@@ -330,7 +330,7 @@ export async function temporalSearch(
 
 /** Parse Prometheus text metrics into structured object */
 function parseMetrics(text: string): Metrics {
-  const metrics: Metrics = { messages_added: 0, searches_total: 0, deriver_drops: 0, deriver_queue_depth: 0 };
+  const metrics: Metrics = { messages_added: 0, searches_total: 0, deriver_drops: 0, deriver_queue_depth: 0, writeback_writes: 0, writeback_drops: 0, writeback_skipped_ro: 0, writeback_queue_depth: 0 };
   for (const line of text.split("\n")) {
     if (line.startsWith("#") || !line.trim()) continue;
     const match = line.match(/^(\w+)\s+(\d+)/);
@@ -340,6 +340,10 @@ function parseMetrics(text: string): Metrics {
       else if (key === "vectorizer_searches_total") metrics.searches_total = Number(val);
       else if (key === "vectorizer_deriver_drops_total") metrics.deriver_drops = Number(val);
       else if (key === "vectorizer_deriver_queue_depth") metrics.deriver_queue_depth = Number(val);
+      else if (key === "vectorizer_writeback_writes_total") metrics.writeback_writes = Number(val);
+      else if (key === "vectorizer_writeback_drops_total") metrics.writeback_drops = Number(val);
+      else if (key === "vectorizer_writeback_skipped_ro_total") metrics.writeback_skipped_ro = Number(val);
+      else if (key === "vectorizer_writeback_queue_depth") metrics.writeback_queue_depth = Number(val);
     }
   }
   return metrics;

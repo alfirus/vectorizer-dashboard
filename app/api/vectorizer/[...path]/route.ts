@@ -13,6 +13,7 @@ async function proxyRequest(req: NextRequest, path: string[]) {
   const headers: Record<string, string> = {
     "Content-Type": req.headers.get("content-type") || "application/json",
     "X-API-Key": API_KEY,
+    "X-Source": "dashboard",
   };
 
   const init: RequestInit = {

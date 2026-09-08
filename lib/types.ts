@@ -70,6 +70,10 @@ export interface Metrics {
   searches_total: number;
   deriver_drops: number;
   deriver_queue_depth: number;
+  writeback_writes: number;
+  writeback_drops: number;
+  writeback_skipped_ro: number;
+  writeback_queue_depth: number;
 }
 
 export interface Session {

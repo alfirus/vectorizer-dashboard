@@ -118,6 +118,13 @@ BACKUP_RETENTION_DAYS=7
 
 Never expose `ALERT_* / SMTP_* / API_KEY` client-side — read only via `process.env` in `app/api/*` route handlers.
 
+## Vault Writeback (staging mirror)
+
+When the engine has `VAULT_WRITEBACK=true`, every stored turn is mirrored to per-session staging markdown (`<agent>/vault/10-memory/sessions/<session>.md`, frontmatter `generated_by: vectorizer`, `status: staging`). The dashboard surfaces it two ways:
+
+- **Activity → Vault Writeback** cards: `vectorizer_writeback_writes_total` (appends), `vectorizer_writeback_drops_total` (queue-full loss), `vectorizer_writeback_skipped_ro_total` (vault read-only), `vectorizer_writeback_queue_depth`. All four parse from `/metrics` in `lib/api.ts:parseMetrics`.
+- **Vault → Staging sessions / Inbox candidates** filter chips: shortcut the file list to `sessions/` (writeback output) and `00-inbox/` (promotion candidates). Staging files are `status: staging` — promotion to curated truth stays manual.
+
 ## Cron (host)
 
 Owned by Hermes `hermes cron` (not dashboard Docker — it has no `hermes` binary):
