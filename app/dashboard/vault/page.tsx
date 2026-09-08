@@ -281,9 +281,14 @@ export default function VaultPage() {
         <div className="p-3 flex gap-2">
           <div className="flex-1 relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted" />
-            <input value={query} onChange={e => setQuery(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSearch()} placeholder="Filter by path…" className="w-full bg-background border border-border rounded-xl pl-9 pr-3 py-2.5 text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
+            <input value={query} onChange={e => setQuery(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSearch()} placeholder="Filter by path… (try sessions)" className="w-full bg-background border border-border rounded-xl pl-9 pr-3 py-2.5 text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
           </div>
           <button onClick={handleSearch} className="px-4 py-2.5 rounded-xl bg-primary text-white text-sm font-semibold shrink-0">Search</button>
+        </div>
+        <div className="px-3 pb-2 flex gap-2 flex-wrap">
+          <button onClick={() => { setQuery("sessions"); setOffset(0); load("sessions", 0); }} className="px-3 py-1.5 rounded-full border border-primary/30 bg-primary/10 text-xs font-medium text-primary hover:bg-primary/20">Staging sessions</button>
+          <button onClick={() => { setQuery("00-inbox"); setOffset(0); load("00-inbox", 0); }} className="px-3 py-1.5 rounded-full border border-border bg-surface text-xs font-medium text-muted hover:text-foreground">Inbox candidates</button>
+          <button onClick={() => { setQuery(""); setOffset(0); load("", 0); }} className="px-3 py-1.5 rounded-full border border-border bg-surface text-xs font-medium text-muted hover:text-foreground">Clear</button>
         </div>
 
         {loading ? <div className="p-4 space-y-2">{[1,2,3].map(i => <div key={i} className="h-12 bg-surface rounded-xl animate-pulse" />)}</div>

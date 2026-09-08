@@ -177,6 +177,20 @@ export default function ActivityPage() {
         <MetricCard icon={TrendingUp} label="Queue" value={m?.deriver_queue_depth || 0} sub={m?.deriver_queue_depth ? "pending" : "empty"} color={m?.deriver_queue_depth ? "bg-warning" : "bg-success/20"} />
       </div>
 
+      {/* Vault Writeback */}
+      <div className="bg-card border border-border rounded-2xl p-4 shadow-card">
+        <h2 className="text-sm font-semibold flex items-center gap-2 mb-3">
+          <Database className="w-4 h-4 text-muted" /> Vault Writeback
+          <span className="text-xs font-normal text-muted">(staging markdown mirror)</span>
+        </h2>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <MetricCard icon={MessageSquare} label="MD Appends" value={m?.writeback_writes || 0} sub={(m?.writeback_writes || 0) === 0 ? "off or idle" : "turns mirrored"} color="bg-primary" />
+          <MetricCard icon={TrendingUp} label="WB Queue" value={m?.writeback_queue_depth || 0} sub={m?.writeback_queue_depth ? "pending" : "empty"} color={m?.writeback_queue_depth ? "bg-warning" : "bg-success/20"} />
+          <MetricCard icon={AlertTriangle} label="WB Dropped" value={m?.writeback_drops || 0} sub={m?.writeback_drops ? "turns lost" : "none"} color={m?.writeback_drops ? "bg-danger" : "bg-success/20"} />
+          <MetricCard icon={AlertTriangle} label="Skipped (RO)" value={m?.writeback_skipped_ro || 0} sub={m?.writeback_skipped_ro ? "vault read-only" : "writable"} color={m?.writeback_skipped_ro ? "bg-warning" : "bg-success/20"} />
+        </div>
+      </div>
+
       {/* Workspace Chart + Role Distribution */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
         <div className="lg:col-span-2 bg-card border border-border rounded-2xl p-4 shadow-card">
