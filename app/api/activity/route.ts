@@ -6,6 +6,7 @@ const API_KEY = process.env.VECTORIZER_API_KEY || "vectorizer-local-key";
 const headers = {
   "Content-Type": "application/json",
   "X-API-Key": API_KEY,
+  "X-Source": "dashboard",
 };
 
 async function fetchJSON<T>(path: string): Promise<T> {
