@@ -13,7 +13,7 @@ Next.js 14 + Tailwind + shadcn — ops UI for [Vectorizer](../vectorizer) (seman
 - **Overview** — Health (`8091/health` + Chroma `heartbeat`), vault stats (68 files/1201 chunks/1419 nodes), workspace proportions, recent vault activity
 - **Workspaces** — `GET /workspaces` + per-collection `GET /collections/:id/count` → workspace document counts. Creates/deletes workspaces.
 - **Vault explorer** — `GET /api/vault?action=stats|files|tree|graph` → `MEMORY_INDEX.json + GRAPH.json`. Dry-run diff, reindex trigger with **real-time SSE progress bar**.
-- **Semantic search** — `POST /messages/search` with workspace filter + `where.hybrid=true` toggle, highlight + copy per hit, latency sparkline.
+- **Semantic search** — `POST /messages/search` with workspace filter + `where.hybrid=true` toggle, highlight + copy per hit, latency sparkline. Note: `/messages/search/all` (no workspace filter) now fuses vector + BM25 server-side by default — `Semantic` mode there still returns hybrid-fused results; the toggle matters for single-workspace search (pure vector vs fusion). Per-hit `source` shows `hybrid` vs `semantic-fallback`.
 - **Ask RAG** — `POST /api/brain` → single-workspace Vectorizer search (floored, merged) → LM Studio `qwen3.6-35b` streaming; strips `<think>`, **abstains when nothing passes the relevance floor** instead of confabulating, falls back to synth answer from context when LM cold (no regex name-injection — that class of bug is dead). Sources collapsible with copy.
 - **Embeddings** — `GET /collections` + `GET .../collections/:id/get` with `include=embeddings,documents,metadatas`. Dimension + sample vectors.
 - **Knowledge graph** — `GRAPH.json` nodes/edges → `recharts` force-ish + BFS neighbors; stats 1419/7479.
@@ -28,7 +28,7 @@ Next.js 14 + Tailwind + shadcn — ops UI for [Vectorizer](../vectorizer) (seman
 | `/dashboard` | Overview | Health, vault stats, workspace proportions |
 | `/dashboard/workspaces` | Workspaces | Document counts, create/delete |
 | `/dashboard/vault` | Vault explorer | File grid, dry-run, reindex with SSE progress bar |
-| `/dashboard/search` | Semantic search | Workspace filter, hybrid toggle, highlight + copy |
+| `/dashboard/search` | Semantic search | Workspace filter, hybrid toggle (matters for single-workspace; search-all fuses server-side by default), highlight + copy |
 | `/dashboard/rag` | Ask RAG | Streaming LLM, source citations |
 | `/dashboard/embeddings` | Embeddings | Dimension + sample vectors |
 | `/dashboard/graph` | Knowledge graph | Force graph, BFS neighbors |

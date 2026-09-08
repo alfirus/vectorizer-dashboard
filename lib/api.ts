@@ -252,38 +252,17 @@ export async function searchAllWorkspaces(
   nResults = 10,
   hybrid = false
 ): Promise<SearchResponse> {
-  // When hybrid=false, use the fast server-side RRF-merged endpoint
-  if (!hybrid) {
-    const res = await fetch(`${PROXY}/messages/search/all`, {
-      method: "POST",
-      headers: jsonHeaders,
-      body: JSON.stringify({ query, n_results: nResults }),
-    });
-    return res.json();
-  }
-  // Hybrid + all: do per-workspace HybridSearch in parallel, then merge (preserves BM25 + RRF per WS)
-  const ws = await getWorkspaces();
-  const ids = (ws.workspaces || []).map((w) => w.id);
-  const perWs = await Promise.all(
-    ids.map(async (id) => {
-      const res = await fetch(`${PROXY}/messages/search`, {
-        method: "POST",
-        headers: jsonHeaders,
-        body: JSON.stringify({ query, n_results: nResults, where: { workspace_id: id, hybrid: true } }),
-      });
-      const data = await res.json().catch(() => ({ results: [] }));
-      return (data.results || []) as SearchResult[];
-    })
-  );
-  const all = perWs.flat();
-  // Global sort by score/distance and dedupe
-  all.sort((a, b) => (b.score || 0) - (a.score || 0) || (a.distance || 999) - (b.distance || 999));
-  const seen = new Set<string>();
-  const deduped: SearchResult[] = [];
-  for (const r of all) {
-    if (!seen.has(r.id)) { seen.add(r.id); deduped.push(r); if (deduped.length >= nResults) break; }
-  }
-  return { count: deduped.length, results: deduped };
+  // /messages/search/all fuses vector + identifier-aware BM25 server-side by
+  // default (hybrid ON unless opted out) with per-workspace fan-out, global RRF
+  // merge, and honest `source` labels — one call covers both modes, so no
+  // client-side fan-out needed. Toggle-off intentionally omits the field and
+  // still gets fused results via the server default.
+  const res = await fetch(`${PROXY}/messages/search/all`, {
+    method: "POST",
+    headers: jsonHeaders,
+    body: JSON.stringify({ query, n_results: nResults, ...(hybrid ? { hybrid: true } : {}) }),
+  });
+  return res.json();
 }
 
 export async function getWorkspaceHealth(
