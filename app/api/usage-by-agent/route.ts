@@ -22,6 +22,7 @@ export async function GET(req: Request) {
           "Content-Type": "application/json",
           "X-API-Key": API_KEY,
           "X-Source": "dashboard",
+          "X-Agent": "dashboard",
         },
         cache: "no-store",
       }
@@ -29,18 +30,20 @@ export async function GET(req: Request) {
     if (!res.ok) throw new Error(`/usage/daily: ${res.status}`);
     const json = await res.json();
 
-    // json.days[] has { date, total, by_source: { agent1: N, agent2: M, ... }, searches, stores, ask, chat, code, upload, other }
+    // json.days[] has { date, total, by_agent?, by_source, searches, ... }
+    // Prefer by_agent (real caller identity via X-Agent) once the backend
+    // ships it; fall back to by_source so the chart works against the old API.
     const daysData = json.days || [];
 
-    // Aggregate by source (agent) across all dates
+    // Aggregate by agent across all dates
     const agentTotals: Record<string, number> = {};
     const dailyByAgent: Record<string, Record<string, number>> = {};
 
     for (const d of daysData) {
       const dateKey = d.date; // YYYY-MM-DD
       dailyByAgent[dateKey] = {};
-      const bySource = d.by_source || {};
-      for (const [agent, count] of Object.entries(bySource)) {
+      const byAgent = (d.by_agent && Object.keys(d.by_agent).length ? d.by_agent : d.by_source) || {};
+      for (const [agent, count] of Object.entries(byAgent)) {
         const n = Number(count) || 0;
         if (n > 0) {
           agentTotals[agent] = (agentTotals[agent] || 0) + n;
