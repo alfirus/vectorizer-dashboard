@@ -58,12 +58,31 @@ export async function GET(req: Request) {
       .slice(0, 8); // show top 8 agents max
 
     const agentNames = sortedAgents.map(([name]) => name);
-    const agentColors: Record<string, string> = {
+
+    // Distinct color per agent. Known agents keep their brand colors;
+    // everyone else gets a stable palette color hashed from the name,
+    // so colors don't shuffle between reloads or when ranks change.
+    const KNOWN_COLORS: Record<string, string> = {
       mirza: "#7c3aed",
       maisarah: "#22d3ee",
       alfirus: "#f59e0b",
-      default: "#6b7289",
     };
+    const PALETTE = [
+      "#34d399", // emerald
+      "#f472b6", // pink
+      "#60a5fa", // blue
+      "#a3e635", // lime
+      "#fb7185", // rose
+      "#fb923c", // orange
+      "#2dd4bf", // teal
+      "#818cf8", // indigo
+    ];
+    function colorFor(name: string): string {
+      if (KNOWN_COLORS[name]) return KNOWN_COLORS[name];
+      let h = 0;
+      for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+      return PALETTE[h % PALETTE.length];
+    }
 
     // Build chart data: one entry per date, with bars per agent
     const chartData = daysData.map((d: any) => {
@@ -84,7 +103,7 @@ export async function GET(req: Request) {
       agents: agentNames.map(name => ({
         name,
         total: agentTotals[name],
-        color: agentColors[name] || agentColors.default,
+        color: colorFor(name),
       })),
       totalCalls,
       days,
