@@ -14,6 +14,7 @@ export async function GET(req: Request) {
         "Content-Type": "application/json",
         "X-API-Key": API_KEY,
         "X-Source": "dashboard",
+        "X-Agent": "dashboard",
       },
       cache: "no-store",
     });
