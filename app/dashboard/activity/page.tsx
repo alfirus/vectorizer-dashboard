@@ -45,8 +45,18 @@ function MetricCard({ icon: Icon, label, value, sub, color }: {
 }
 
 export default function ActivityPage() {
+  // Action metadata for the per-agent breakdown ("what did Shiela store, what did Sofia search")
+  const ACTION_META: { key: string; label: string; Icon: any }[] = [
+    { key: "search", label: "search", Icon: Search },
+    { key: "store", label: "stored", Icon: Database },
+    { key: "ask", label: "ask", Icon: MessageSquare },
+    { key: "chat", label: "chat", Icon: MessageSquare },
+    { key: "code", label: "code", Icon: Zap },
+    { key: "upload", label: "upload", Icon: ArrowUpRight },
+    { key: "other", label: "other", Icon: Activity },
+  ];
   const [data, setData] = useState<ActivityData | null>(null);
-  const [agentData, setAgentData] = useState<{ chartData: any[]; agents: { name: string; total: number; color: string }[]; totalCalls: number } | null>(null);
+  const [agentData, setAgentData] = useState<{ chartData: any[]; agents: { name: string; total: number; color: string; actions: Record<string, number> }[]; totalCalls: number } | null>(null);
   const [usageDays, setUsageDays] = useState<7 | 30>(30);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -247,6 +257,28 @@ export default function ActivityPage() {
               <span className="ml-auto font-mono">
                 {agentData.totalCalls.toLocaleString()} calls / {usageDays}d
               </span>
+            </div>
+            {/* Per-agent action mix: what each agent actually did */}
+            <div className="flex flex-col gap-1.5 mt-3">
+              {agentData.agents.map(agent => {
+                const acts = ACTION_META
+                  .map(m => ({ ...m, n: agent.actions?.[m.key] || 0 }))
+                  .filter(x => x.n > 0);
+                if (acts.length === 0) return null;
+                return (
+                  <div key={agent.name} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
+                    <span className="inline-flex items-center gap-1.5 font-medium text-foreground min-w-20">
+                      <span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: agent.color }} />
+                      {agent.name}
+                    </span>
+                    {acts.map(({ key, label, Icon, n }) => (
+                      <span key={key} className="inline-flex items-center gap-1 text-muted">
+                        <Icon className="w-3 h-3" />{n} {label}
+                      </span>
+                    ))}
+                  </div>
+                );
+              })}
             </div>
           </>
         )}
