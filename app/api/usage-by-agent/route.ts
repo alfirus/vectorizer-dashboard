@@ -77,12 +77,30 @@ export async function GET(req: Request) {
       "#2dd4bf", // teal
       "#818cf8", // indigo
     ];
-    const colorFor = (name: string): string => {
-      if (KNOWN_COLORS[name]) return KNOWN_COLORS[name];
+    const hashName = (name: string): number => {
       let h = 0;
       for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
-      return PALETTE[h % PALETTE.length];
+      return h;
     };
+    // Assign in rank order with linear probing: hash picks the preferred
+    // slot, taken slots are skipped, so the visible agents are always
+    // distinct. Deterministic for the same agent set.
+    const used = new Set<string>(Object.values(KNOWN_COLORS));
+    const colors: Record<string, string> = {};
+    for (const name of agentNames) {
+      if (KNOWN_COLORS[name]) {
+        colors[name] = KNOWN_COLORS[name];
+        continue;
+      }
+      let idx = hashName(name) % PALETTE.length;
+      let guard = 0;
+      while (used.has(PALETTE[idx]) && guard < PALETTE.length) {
+        idx = (idx + 1) % PALETTE.length;
+        guard++;
+      }
+      colors[name] = PALETTE[idx];
+      used.add(PALETTE[idx]);
+    }
 
     // Build chart data: one entry per date, with bars per agent
     const chartData = daysData.map((d: any) => {
@@ -103,7 +121,7 @@ export async function GET(req: Request) {
       agents: agentNames.map(name => ({
         name,
         total: agentTotals[name],
-        color: colorFor(name),
+        color: colors[name],
       })),
       totalCalls,
       days,
