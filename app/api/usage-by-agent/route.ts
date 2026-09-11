@@ -77,12 +77,12 @@ export async function GET(req: Request) {
       "#2dd4bf", // teal
       "#818cf8", // indigo
     ];
-    function colorFor(name: string): string {
+    const colorFor = (name: string): string => {
       if (KNOWN_COLORS[name]) return KNOWN_COLORS[name];
       let h = 0;
       for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
       return PALETTE[h % PALETTE.length];
-    }
+    };
 
     // Build chart data: one entry per date, with bars per agent
     const chartData = daysData.map((d: any) => {
