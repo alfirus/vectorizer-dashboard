@@ -46,7 +46,7 @@ function MetricCard({ icon: Icon, label, value, sub, color }: {
 
 export default function ActivityPage() {
   const [data, setData] = useState<ActivityData | null>(null);
-  const [usage, setUsage] = useState<any[] | null>(null);
+  const [agentData, setAgentData] = useState<{ chartData: any[]; agents: { name: string; total: number; color: string }[]; totalCalls: number } | null>(null);
   const [usageDays, setUsageDays] = useState<7 | 30>(30);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -78,19 +78,19 @@ export default function ActivityPage() {
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [fetchData]);
 
-  // Daily usage (separate fetch — refreshes on toggle + every 60s, not every 5s)
+  // Daily usage by agent (separate fetch — refreshes on toggle + every 60s, not every 5s)
   useEffect(() => {
     let cancelled = false;
-    const fetchUsage = async () => {
+    const fetchAgentUsage = async () => {
       try {
-        const res = await fetch(`/api/usage?days=${usageDays}`, { cache: "no-store" });
+        const res = await fetch(`/api/usage-by-agent?days=${usageDays}`, { cache: "no-store" });
         if (!res.ok) return;
         const json = await res.json();
-        if (!cancelled && json.days) setUsage(json.days);
+        if (!cancelled && json.chartData) setAgentData(json);
       } catch { /* usage is bonus — activity page works without it */ }
     };
-    fetchUsage();
-    const t = setInterval(fetchUsage, 60000);
+    fetchAgentUsage();
+    const t = setInterval(fetchAgentUsage, 60000);
     return () => { cancelled = true; clearInterval(t); };
   }, [usageDays]);
 
@@ -187,11 +187,11 @@ export default function ActivityPage() {
         </div>
       </div>
 
-      {/* Daily Usage — is any AI agent really using Vectorizer? */}
+      {/* Daily Usage By Agent */}
       <div className="bg-card border border-border rounded-2xl p-4 shadow-card">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-semibold flex items-center gap-2">
-            <Activity className="w-4 h-4 text-muted" /> Daily Usage
+            <Activity className="w-4 h-4 text-muted" /> Daily Usage By Agent
             <span className="text-xs font-normal text-muted">(API calls per day)</span>
           </h2>
           <div className="flex gap-1 text-[11px]">
@@ -206,48 +206,46 @@ export default function ActivityPage() {
             ))}
           </div>
         </div>
-        {!usage ? (
+        {!agentData ? (
           <p className="text-sm text-muted text-center py-6">Loading usage…</p>
-        ) : usage.every(d => d.total === 0) ? (
+        ) : agentData.totalCalls === 0 ? (
           <p className="text-sm text-muted text-center py-6">
             No API usage in the last {usageDays} days — no agent has called Vectorizer yet.
           </p>
         ) : (
           <>
             <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={usage.map(d => ({
-                name: d.date.slice(5),
-                searches: d.searches || 0,
-                stores: d.stores || 0,
-                other: (d.ask || 0) + (d.chat || 0) + (d.code || 0) + (d.upload || 0) + (d.other || 0),
-              }))}>
+              <BarChart data={agentData.chartData} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#23233a" />
                 <XAxis dataKey="name" tick={{ fill: "#6b7289", fontSize: 10 }} interval={usageDays === 30 ? 4 : 0} />
                 <YAxis tick={{ fill: "#6b7289", fontSize: 11 }} allowDecimals={false} />
                 <Tooltip
                   contentStyle={{ backgroundColor: "#12121a", border: "1px solid #23233a", borderRadius: 12 }}
                   labelFormatter={(l: string) => {
-                    const full = usage.find(d => d.date.slice(5) === l)?.date;
-                    return full || l;
+                    const entry = agentData.chartData.find((d: any) => d.name === l);
+                    return entry?.fullDate || l;
                   }}
                 />
-                <Bar dataKey="searches" stackId="a" fill="#22d3ee" name="searches" radius={[0, 0, 0, 0]} />
-                <Bar dataKey="stores" stackId="a" fill="#7c3aed" name="stores" radius={[0, 0, 0, 0]} />
-                <Bar dataKey="other" stackId="a" fill="#3b3b55" name="ask/chat/code" radius={[6, 6, 0, 0]} />
+                {agentData.agents.map(agent => (
+                  <Bar
+                    key={agent.name}
+                    dataKey={agent.name}
+                    fill={agent.color}
+                    name={agent.name}
+                    radius={[2, 2, 0, 0]}
+                  />
+                ))}
               </BarChart>
             </ResponsiveContainer>
             <div className="flex items-center gap-4 mt-2 text-[11px] text-muted">
-              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-cyan inline-block" /> searches</span>
-              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: "#7c3aed" }} /> stores</span>
-              <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-surface inline-block border border-border" /> ask/chat/code</span>
+              {agentData.agents.map(agent => (
+                <span key={agent.name} className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: agent.color }} />
+                  {agent.name}
+                </span>
+              ))}
               <span className="ml-auto font-mono">
-                {usage.reduce((s, d) => s + d.total, 0).toLocaleString()} calls / {usageDays}d
-                {(() => {
-                  const src: Record<string, number> = {};
-                  usage.forEach(d => Object.entries(d.by_source || {}).forEach(([k, v]) => { src[k] = (src[k] || 0) + (v as number); }));
-                  const top = Object.entries(src).sort((a, b) => b[1] - a[1])[0];
-                  return top ? ` · mostly ${top[0]} (${top[1].toLocaleString()})` : "";
-                })()}
+                {agentData.totalCalls.toLocaleString()} calls / {usageDays}d
               </span>
             </div>
           </>
