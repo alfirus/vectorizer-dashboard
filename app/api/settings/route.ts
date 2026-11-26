@@ -50,12 +50,16 @@ function quoteEnvValue(v: string): string {
 
 type ScheduleState = Record<string, { enabled: boolean; schedule: string }>;
 
-// Restrict persisted schedules to the jobs the dashboard actually manages,
-// with cron-shaped schedule strings (charset + length gate).
+// P1-5: the ONLY canonical schedule owner is ubuntu's crontab on the host,
+// installed by vectorizer's ops-cron/install.sh (verified on ns539881):
+//   vectorizer-backup-daily  0 3 * * *  (nightly Chroma/config backup)
+//   vectorizer-health-1h     0 * * * *  (hourly stack probe + backup watchdog)
+// There is NO reindex cron job; the root-level vectorizer_*.py scripts are
+// stale Windows-local files, not scheduler input. This page persists
+// desired-state only — crontab itself is edited on the host via SSH.
 const KNOWN_JOBS = new Set([
-  "vectorizer-reindex-1h",
   "vectorizer-backup-daily",
-  "vectorizer-health-5m",
+  "vectorizer-health-1h",
 ]);
 const SCHEDULE_RE = /^[\d\s*\/\-,A-Za-z]+$/;
 
@@ -121,9 +125,8 @@ async function writeEnv(patch: Record<string, string>) {
 
 async function readSchedules(): Promise<ScheduleState> {
   const defaults: ScheduleState = {
-    "vectorizer-reindex-1h": { enabled: true, schedule: "0 * * * *" },
     "vectorizer-backup-daily": { enabled: true, schedule: "0 3 * * *" },
-    "vectorizer-health-5m": { enabled: true, schedule: "*/5 * * * *" },
+    "vectorizer-health-1h": { enabled: true, schedule: "0 * * * *" },
   };
   try {
     if (SCHEDULES_PATH && existsSync(SCHEDULES_PATH)) {
@@ -157,8 +160,10 @@ export async function GET(req: NextRequest) {
     else if (masked[k]) masked[k] = "••••";
   }
   const schedules = await readSchedules();
-  // Include live host cron status hint from env fallback (host hermes owns actual cron)
-  const hint = "Cron is owned by Hermes on host (hermes cron list). Schedules here are desired state — apply via Save.";
+  // P1-5: single canonical cron story — ubuntu crontab owns the real jobs
+  // (vectorizer ops-cron/install.sh). Hermes cron does not run vectorizer
+  // jobs; there is no reindex cron. Schedules here are desired state only.
+  const hint = "Cron is owned by ubuntu crontab on the host (vectorizer ops-cron/install.sh: backup-daily 0 3 * * *, health-1h hourly). Schedules here are desired state — apply via SSH, not Save.";
   // D2: never return raw secrets — masked form only. Secrets are updated only
   // when the client explicitly sends a new (unmasked) value.
   return NextResponse.json({ env: masked, schedules, hint });
@@ -251,9 +256,9 @@ export async function PUT(req: NextRequest) {
     }
     return NextResponse.json({ ok: true, schedules });
   }
-  // run is host-only — surface hint
+  // run is host-only — surface hint (P1-5: ubuntu crontab scripts, not hermes)
   if (action === "run") {
-    return NextResponse.json({ ok: true, hint: "Run on host: hermes cron run " + job + " or wait for next tick. Dashboard in Docker cannot exec hermes." });
+    return NextResponse.json({ ok: true, hint: "Run on host via SSH: /opt/vectorizer/ops-cron/" + job + ".sh (see vectorizer ops-cron/README.md). Dashboard in Docker cannot exec host cron." });
   }
   return NextResponse.json({ error: "unknown action" }, { status: 400 });
 }

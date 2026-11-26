@@ -6,9 +6,8 @@ import { Settings as SettingsIcon, Save, Clock, Mail, Send, Shield, Database, Ey
 type Env = Record<string, string>;
 type Sched = Record<string, { enabled: boolean; schedule: string }>;
 const JOBS = [
-  { id: "vectorizer-reindex-1h", label: "Reindex", desc: "Vault → Vectorizer diff index" },
-  { id: "vectorizer-backup-daily", label: "Backup", desc: "Chroma + GRAPH → SynologyDrive, keep 7d" },
-  { id: "vectorizer-health-5m", label: "Health", desc: "Probe 8091/8100/8092/1234, auto-heal + alert" },
+  { id: "vectorizer-backup-daily", label: "Backup", desc: "Nightly Chroma volume + sqlite snapshot + config bundle, 7d retention (03:00 UTC)" },
+  { id: "vectorizer-health-1h", label: "Health", desc: "Hourly stack probe (8091/8102/8092/8093) + backup freshness watchdog, alert on fail" },
 ];
 
 export default function SettingsPage() {
@@ -94,7 +93,7 @@ export default function SettingsPage() {
 
       <section className="bg-card border border-border rounded-2xl p-4 shadow-card">
         <h2 className="text-sm font-bold flex items-center gap-2 mb-3"><Send className="w-4 h-4 text-primary" /> Telegram Alerts</h2>
-        <p className="text-xs text-muted mb-3">Health alerts via Telegram DM. Stored in <code className="px-1 py-0.5 bg-surface rounded text-[11px]">C:/Users/alfir/vectorizer/.env</code> — server-only.</p>
+        <p className="text-xs text-muted mb-3">Health alerts via Telegram DM. Stored in the Vectorizer <code className="px-1 py-0.5 bg-surface rounded text-[11px]">.env</code> on the server (see <code className="px-1 py-0.5 bg-surface rounded text-[11px]">SETTINGS_ENV_PATH</code>) — server-only.</p>
         <div className="space-y-3">
           <label className="block">
             <span className="text-xs font-medium text-muted">Bot Token <span className="text-muted/60">(from @BotFather)</span></span>
@@ -111,18 +110,18 @@ export default function SettingsPage() {
         <h2 className="text-sm font-bold flex items-center gap-2 mb-3"><Mail className="w-4 h-4 text-primary" /> Email Alerts</h2>
         <div className="space-y-3">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <label className="block"><span className="text-xs font-medium text-muted">Alert To</span><input value={env.ALERT_EMAIL_TO || ""} onChange={(e) => setEnv({ ...env, ALERT_EMAIL_TO: e.target.value })} placeholder="alfirus@gmail.com" className="mt-1 w-full bg-background border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-primary" /></label>
-            <label className="block"><span className="text-xs font-medium text-muted">Alert From</span><input value={env.ALERT_EMAIL_FROM || ""} onChange={(e) => setEnv({ ...env, ALERT_EMAIL_FROM: e.target.value })} placeholder="vectorizer@alfirus.my" className="mt-1 w-full bg-background border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-primary" /></label>
+            <label className="block"><span className="text-xs font-medium text-muted">Alert To</span><input value={env.ALERT_EMAIL_TO || ""} onChange={(e) => setEnv({ ...env, ALERT_EMAIL_TO: e.target.value })} placeholder="alerts@example.com" className="mt-1 w-full bg-background border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-primary" /></label>
+            <label className="block"><span className="text-xs font-medium text-muted">Alert From</span><input value={env.ALERT_EMAIL_FROM || ""} onChange={(e) => setEnv({ ...env, ALERT_EMAIL_FROM: e.target.value })} placeholder="vectorizer@example.com" className="mt-1 w-full bg-background border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-primary" /></label>
           </div>
           <div className="grid grid-cols-3 gap-3">
             <label className="block col-span-2"><span className="text-xs font-medium text-muted">SMTP Host</span><input value={env.SMTP_HOST || ""} onChange={(e) => setEnv({ ...env, SMTP_HOST: e.target.value })} placeholder="smtp.gmail.com" className="mt-1 w-full bg-background border border-border rounded-xl px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-primary" /></label>
             <label className="block"><span className="text-xs font-medium text-muted">Port</span><input value={env.SMTP_PORT || ""} onChange={(e) => setEnv({ ...env, SMTP_PORT: e.target.value })} placeholder="587" className="mt-1 w-full bg-background border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-primary" /></label>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <label className="block"><span className="text-xs font-medium text-muted">SMTP User</span><input value={env.SMTP_USER || ""} onChange={(e) => setEnv({ ...env, SMTP_USER: e.target.value })} placeholder="you@gmail.com" className="mt-1 w-full bg-background border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-primary" /></label>
+            <label className="block"><span className="text-xs font-medium text-muted">SMTP User</span><input value={env.SMTP_USER || ""} onChange={(e) => setEnv({ ...env, SMTP_USER: e.target.value })} placeholder="you@example.com" className="mt-1 w-full bg-background border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-primary" /></label>
             <label className="block"><span className="text-xs font-medium text-muted">SMTP Pass</span><input value={env.SMTP_PASS || ""} onChange={(e) => setEnv({ ...env, SMTP_PASS: e.target.value })} type={showPass ? "text" : "password"} placeholder="16-char app password" className="mt-1 w-full bg-background border border-border rounded-xl px-3 py-2.5 text-sm font-mono focus:outline-none focus:border-primary" /></label>
           </div>
-          <p className="text-[11px] text-muted">Gmail: Google Account → Security → App passwords → 16-char code. Stored only in <code className="px-1 py-0.5 bg-surface rounded">vectorizer/.env</code>.</p>
+          <p className="text-[11px] text-muted">Gmail: Google Account → Security → App passwords → 16-char code. Stored only in the Vectorizer <code className="px-1 py-0.5 bg-surface rounded">.env</code> (see <code className="px-1 py-0.5 bg-surface rounded">SETTINGS_ENV_PATH</code>).</p>
         </div>
       </section>
 
@@ -130,12 +129,12 @@ export default function SettingsPage() {
         <h2 className="text-sm font-bold flex items-center gap-2 mb-3"><Database className="w-4 h-4 text-primary" /> Backup</h2>
         <div className="flex items-center gap-3">
           <label className="flex-1 block"><span className="text-xs font-medium text-muted">Retention (days)</span><input value={env.BACKUP_RETENTION_DAYS || "7"} onChange={(e) => setEnv({ ...env, BACKUP_RETENTION_DAYS: e.target.value })} className="mt-1 w-full bg-background border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-primary" /></label>
-          <div className="text-xs text-muted pt-5">Daily 03:00 → <code className="px-1 py-0.5 bg-surface rounded">SynologyDrive/ai/backups/vectorizer/</code></div>
+          <div className="text-xs text-muted pt-5">Daily 03:00 UTC → host backup dir, keep <code className="px-1 py-0.5 bg-surface rounded">BACKUP_RETENTION_DAYS</code> (see ops-cron README)</div>
         </div>
       </section>
 
       <div className="flex items-start gap-2 text-[11px] text-muted bg-surface/50 border border-border rounded-xl px-3 py-2.5">
-        <Shield className="w-4 h-4 shrink-0 mt-0.5 text-primary" /><span>Secrets live in <code className="font-mono">C:/Users/alfir/vectorizer/.env</code> on the server and are masked here. Values never leave the server except as you type. Schedules saved to <code className="font-mono">cron_schedules.json</code>.</span>
+        <Shield className="w-4 h-4 shrink-0 mt-0.5 text-primary" /><span>Secrets live in the Vectorizer <code className="font-mono">.env</code> on the server (<code className="font-mono">SETTINGS_ENV_PATH</code>) and are masked here. Values never leave the server except as you type. Schedules here are desired state — the real jobs run from ubuntu crontab (see vectorizer ops-cron).</span>
       </div>
 
       <button onClick={save} disabled={saving} className={`w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl text-sm font-bold transition-all ${saving ? "bg-surface border border-border text-muted" : "bg-primary text-white shadow-glow active:scale-[0.98]"}`}>
