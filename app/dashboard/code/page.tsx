@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { apiFetch } from "@/lib/auth";
 import { GitBranch, Loader2, ArrowLeft } from "lucide-react";
 
 export default function CodePage() {
@@ -16,7 +17,7 @@ export default function CodePage() {
     setLoading(true); setError(""); setCallers([]); setSearched(target);
     try {
       const q = new URLSearchParams({ workspace_id: workspace.trim(), symbol: target });
-      const res = await fetch(`/api/vectorizer/code/callers?${q}`);
+      const res = await apiFetch(`/api/vectorizer/code/callers?${q}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Lookup failed");
       setCallers(data.callers || []);

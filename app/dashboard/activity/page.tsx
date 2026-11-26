@@ -7,6 +7,7 @@ import {
   Circle, ArrowUpRight, Server
 } from "lucide-react";
 import { BarChart, Bar, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid } from "recharts";
+import { apiFetch } from "@/lib/auth";
 
 function timeAgo(ts: string | undefined): string {
   if (!ts) return "unknown";
@@ -67,7 +68,7 @@ export default function ActivityPage() {
   const fetchData = useCallback(async (silent = false) => {
     if (silent) setRefreshing(true);
     try {
-      const res = await fetch("/api/activity", { cache: "no-store" });
+      const res = await apiFetch("/api/activity", { cache: "no-store" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       if (json.error) throw new Error(json.error);
@@ -93,7 +94,7 @@ export default function ActivityPage() {
     let cancelled = false;
     const fetchAgentUsage = async () => {
       try {
-        const res = await fetch(`/api/usage-by-agent?days=${usageDays}`, { cache: "no-store" });
+        const res = await apiFetch(`/api/usage-by-agent?days=${usageDays}`, { cache: "no-store" });
         if (!res.ok) return;
         const json = await res.json();
         if (!cancelled && json.chartData) setAgentData(json);

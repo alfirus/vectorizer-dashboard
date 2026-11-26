@@ -1,6 +1,8 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { readFile } from "fs/promises";
-import { existsSync } from "fs";
+import { existsSync, realpathSync } from "fs";
+import path from "path";
+import { checkAuth } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +22,46 @@ interface VaultFile {
   mtime?: string;
 }
 
-export async function GET(request: Request) {
+function authFailed(req: NextRequest) {
+  const v = checkAuth(req);
+  if (v === "ok") return null;
+  return NextResponse.json(
+    { error: v === "misconfigured" ? "server misconfigured: DASHBOARD_AUTH_TOKEN is not set" : "unauthorized" },
+    { status: v === "misconfigured" ? 503 : 401 }
+  );
+}
+
+// D3: resolve the requested path strictly inside VAULT_ROOT.
+// The old guard (`path.resolve(VAULT_ROOT + "/" + p)` re-roots absolute p to a
+// passing prefix, and the `existsSync(p) ? p : …` fallbacks opened the raw
+// attacker path) is gone: every input is treated as vault-relative, symlinks
+// are resolved with realpathSync, containment is checked segment-aware via
+// path.relative, and only the verified real path is ever opened.
+function resolveVaultPath(p: string): { ok: true; real: string } | { ok: false; status: number; error: string } {
+  if (p.includes("\0")) return { ok: false, status: 400, error: "bad path" };
+  const normalized = p.replace(/\\/g, "/").replace(/^\/+/, "");
+  if (!normalized) return { ok: false, status: 400, error: "path required" };
+  if (normalized.split("/").includes("..")) {
+    return { ok: false, status: 403, error: "path outside vault" };
+  }
+  const root = path.resolve(VAULT_ROOT);
+  const abs = path.resolve(root, normalized);
+  let real: string;
+  try {
+    real = realpathSync(abs);
+  } catch {
+    return { ok: false, status: 404, error: "not found" };
+  }
+  const rel = path.relative(root, real);
+  if (!rel || rel === ".." || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) {
+    return { ok: false, status: 403, error: "path outside vault" };
+  }
+  return { ok: true, real };
+}
+
+export async function GET(request: NextRequest) {
+  const denied = authFailed(request);
+  if (denied) return denied;
   const { searchParams } = new URL(request.url);
   const action = searchParams.get("action") || "list";
   const offset = parseInt(searchParams.get("offset") || "0", 10);
@@ -29,27 +70,21 @@ export async function GET(request: Request) {
   if (action === "file") {
     const p = searchParams.get("path") || "";
     if (!p) return NextResponse.json({ error: "path required" }, { status: 400 });
-    // Security: only allow reading under VAULT_ROOT, no traversal
-    const path = await import("path");
-    const resolved = path.resolve(p);
-    const root = path.resolve(VAULT_ROOT);
-    if (!resolved.startsWith(root) && !path.resolve(VAULT_ROOT + "/" + p).startsWith(root)) {
-      return NextResponse.json({ error: "path outside vault" }, { status: 403 });
+    const resolved = resolveVaultPath(p);
+    if (!resolved.ok) {
+      return NextResponse.json({ error: resolved.error }, { status: resolved.status });
     }
-    const target = existsSync(p) ? p : existsSync(path.join(VAULT_ROOT, p)) ? path.join(VAULT_ROOT, p) : path.join(root, p.replace(/^.*SynologyDrive\/ai\//, "").replace(/\\/g, "/"));
-    const real = existsSync(target) ? target : p;
-    if (!existsSync(real)) return NextResponse.json({ error: `not found: ${real}` }, { status: 404 });
     try {
-      const content = await readFile(real, "utf-8");
+      const content = await readFile(resolved.real, "utf-8");
       // Try to get metadata from index
       let meta: Record<string, unknown> = {};
       try {
         const idxRaw = await readFile(MEMORY_INDEX_PATH, "utf-8");
         const idx = JSON.parse(idxRaw);
-        const entry = idx.files?.[p] || idx.files?.[real] || Object.entries(idx.files || {}).find(([k]) => real.endsWith(k.replace(/\\/g, "/")))?.[1] as Record<string, unknown> | undefined;
+        const entry = idx.files?.[p] || idx.files?.[resolved.real] || Object.entries(idx.files || {}).find(([k]) => resolved.real.endsWith(k.replace(/\\/g, "/")))?.[1] as Record<string, unknown> | undefined;
         if (entry) meta = entry as Record<string, unknown>;
       } catch { /* no meta */ }
-      return NextResponse.json({ path: p, real, content: content.slice(0, 12000), meta });
+      return NextResponse.json({ path: p, real: resolved.real, content: content.slice(0, 12000), meta });
     } catch (e) { return NextResponse.json({ error: String(e) }, { status: 500 }); }
   }
 

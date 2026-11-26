@@ -1,3 +1,5 @@
+import { checkAuth } from "@/lib/auth";
+
 const VECTORIZER_URL = process.env.VECTORIZER_URL || "http://vectorizer:8091";
 const LM_STUDIO_URL = (process.env.LM_STUDIO_URL || process.env.OAI_COMPATIBLE_URL || "http://host.docker.internal:1234/v1").replace(/\/+$/, "").replace(/\/v1$/, "");
 const LM_STUDIO_KEY = process.env.LM_STUDIO_KEY || process.env.LM_STUDIO_API_KEY || process.env.OAI_API_KEY || "";
@@ -122,6 +124,10 @@ function sseReply(events: Record<string, unknown>[]) {
 }
 
 export async function POST(req: Request) {
+  const verdict = checkAuth(req);
+  if (verdict !== "ok") {
+    return sseReply([{ type: "error", error: verdict === "misconfigured" ? "server misconfigured" : "unauthorized" }]);
+  }
   const { question, workspaceId, hybrid } = await req.json() as { question: string; workspaceId?: string; hybrid?: boolean };
 
   // Determine which workspaces to search

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { checkAuth } from "@/lib/auth";
 
 const VECTORIZER_URL = process.env.VECTORIZER_URL || "http://localhost:8091";
 const API_KEY = process.env.VECTORIZER_API_KEY || "vectorizer-local-key";
@@ -10,6 +11,13 @@ export const dynamic = "force-dynamic";
  * Returns daily usage aggregated by agent/source for the grouped bar chart.
  */
 export async function GET(req: Request) {
+  const verdict = checkAuth(req);
+  if (verdict !== "ok") {
+    return NextResponse.json(
+      { error: verdict === "misconfigured" ? "server misconfigured: DASHBOARD_AUTH_TOKEN is not set" : "unauthorized" },
+      { status: verdict === "misconfigured" ? 503 : 401 }
+    );
+  }
   try {
     const { searchParams } = new URL(req.url);
     const days = Math.min(Math.max(parseInt(searchParams.get("days") || "7", 10) || 7, 1), 90);

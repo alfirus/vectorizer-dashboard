@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { readFile } from "fs/promises";
+import { checkAuth } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +20,13 @@ function detectWorkspace(node: Record<string, unknown>): string {
 }
 
 export async function GET(request: Request) {
+  const verdict = checkAuth(request);
+  if (verdict !== "ok") {
+    return NextResponse.json(
+      { error: verdict === "misconfigured" ? "server misconfigured: DASHBOARD_AUTH_TOKEN is not set" : "unauthorized" },
+      { status: verdict === "misconfigured" ? 503 : 401 }
+    );
+  }
   try {
     const { searchParams } = new URL(request.url);
     const workspace = searchParams.get("workspace");
