@@ -434,3 +434,224 @@ export async function getActivity(): Promise<ActivityData> {
     timestamp: new Date().toISOString(),
   };
 }
+
+// ---- Peers + chat playground (P2) ----
+// All calls go through the Next.js /api/vectorizer proxy (server-side key).
+
+import type {
+  Peer,
+  PeerCard,
+  PeerSessionInfo,
+  PeerRepresentation,
+  ChatPlaygroundRequest,
+  ChatPlaygroundResponse,
+  ChatToolTrace,
+} from "./types";
+
+/** Error carrying the HTTP status from the vectorizer proxy. */
+export class VectorizerError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "VectorizerError";
+    this.status = status;
+  }
+}
+
+async function proxyFetch(path: string, init?: RequestInit): Promise<unknown> {
+  let res: Response;
+  try {
+    res = await fetch(`${PROXY}${path}`, init);
+  } catch {
+    // Network failure reaching the Next proxy / vectorizer down.
+    throw new VectorizerError(502, "Vectorizer unreachable");
+  }
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    let detail = "";
+    try {
+      const parsed = JSON.parse(body) as { error?: string };
+      if (parsed.error) detail = `: ${parsed.error}`;
+    } catch { /* keep raw */ }
+    throw new VectorizerError(res.status, `Vectorizer request failed (${res.status})${detail}`);
+  }
+  try {
+    return await res.json();
+  } catch {
+    return {};
+  }
+}
+
+/** Map a VectorizerError status to the dashboard banner copy. */
+export function vectorizerStatusMessage(status: number): string {
+  if (status === 401 || status === 403)
+    return "Not authorized — check VECTORIZER_API_KEY / peer JWT";
+  if (status === 503) return "LLM brain not enabled";
+  if (status === 502) return "Vectorizer unreachable";
+  return `Vectorizer request failed (${status})`;
+}
+
+function asRecord(v: unknown): Record<string, unknown> {
+  return typeof v === "object" && v !== null ? (v as Record<string, unknown>) : {};
+}
+
+function str(v: unknown, fallback = ""): string {
+  return typeof v === "string" ? v : fallback;
+}
+
+/** Strict workspace list for the peers/chat pages: throws VectorizerError
+ *  on proxy/backend failure (unlike getWorkspaces, which resolves empty). */
+export async function listWorkspaces(): Promise<{ workspaces: { id: string; name: string }[] }> {
+  const data = asRecord(await proxyFetch("/workspaces", { headers: jsonHeaders }));
+  const raw = Array.isArray(data.workspaces) ? (data.workspaces as unknown[]) : [];
+  return {
+    workspaces: raw.map((w) => {
+      const m = asRecord(w);
+      return { id: str(m.id), name: str(m.name) || str(m.id) };
+    }).filter((w) => w.id),
+  };
+}
+
+/** List peers in a workspace. Response shape: `{ peers: [...] }` (Chroma doc maps). */
+export async function getPeers(workspaceId: string): Promise<{ peers: Peer[] }> {
+  const data = asRecord(await proxyFetch(`/workspaces/${workspaceId}/peers`, { headers: jsonHeaders }));
+  const raw = Array.isArray(data.peers) ? (data.peers as unknown[]) : [];
+  const peers: Peer[] = raw.map((p) => {
+    const m = asRecord(p);
+    const meta = asRecord(m.metadata);
+    const id = str(m.id) || str(meta.peer_name) || str(m.document);
+    const name = str(meta.peer_name) || str(m.document) || id;
+    return { id, name, metadata: meta };
+  }).filter((p) => p.id);
+  return { peers };
+}
+
+/** Create a peer. Body: `{ id }` (name falls back to id server-side). */
+export async function createPeer(workspaceId: string, id: string): Promise<{ id: string; name: string }> {
+  const data = asRecord(
+    await proxyFetch(`/workspaces/${workspaceId}/peers`, {
+      method: "POST",
+      headers: jsonHeaders,
+      body: JSON.stringify({ id }),
+    })
+  );
+  return { id: str(data.id, id), name: str(data.name, id) };
+}
+
+/** Get a peer card. Response: `{ peer_id, lines }` (lines may be null when unset). */
+export async function getPeerCard(workspaceId: string, peerId: string): Promise<PeerCard> {
+  const data = asRecord(
+    await proxyFetch(`/workspaces/${workspaceId}/peers/${peerId}/card`, { headers: jsonHeaders })
+  );
+  const lines = Array.isArray(data.lines)
+    ? (data.lines as unknown[]).map((l) => String(l ?? ""))
+    : [];
+  return { peer_id: str(data.peer_id, peerId), lines };
+}
+
+/** Set a peer card. "Remove card" = PUT `{ lines: [] }`. */
+export async function setPeerCard(
+  workspaceId: string,
+  peerId: string,
+  lines: string[]
+): Promise<void> {
+  await proxyFetch(`/workspaces/${workspaceId}/peers/${peerId}/card`, {
+    method: "PUT",
+    headers: jsonHeaders,
+    body: JSON.stringify({ lines }),
+  });
+}
+
+/** List sessions visible to a peer. Response: `{ sessions: [...] }`. */
+export async function getPeerSessions(
+  workspaceId: string,
+  peerId: string
+): Promise<{ sessions: PeerSessionInfo[] }> {
+  const data = asRecord(
+    await proxyFetch(`/workspaces/${workspaceId}/peers/${peerId}/sessions`, { headers: jsonHeaders })
+  );
+  const raw = Array.isArray(data.sessions) ? (data.sessions as unknown[]) : [];
+  const sessions: PeerSessionInfo[] = raw.map((s) => {
+    const m = asRecord(s);
+    const meta = asRecord(m.metadata);
+    const id =
+      str(m.id) || str(m.session_id) || str(meta.session_id) || str(meta.session) || str(m.document);
+    return { id, raw: m };
+  }).filter((s) => s.id);
+  return { sessions };
+}
+
+/**
+ * Peer representation.
+ * NOTE: vectorizer main.go registers this route as
+ * `POST /workspaces/:id/peers/:pid/representation` (not GET), so POST first
+ * and fall back to GET for forward-compatibility. Response keys tolerated:
+ * `{ text | representation, conclusions }`.
+ */
+export async function getPeerRepresentation(
+  workspaceId: string,
+  peerId: string,
+  sessionId?: string
+): Promise<PeerRepresentation> {
+  const qs = sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : "";
+  const path = `/workspaces/${workspaceId}/peers/${peerId}/representation${qs}`;
+  let data: Record<string, unknown>;
+  try {
+    data = asRecord(await proxyFetch(path, { method: "POST", headers: jsonHeaders }));
+  } catch (e) {
+    if (e instanceof VectorizerError && (e.status === 404 || e.status === 405)) {
+      data = asRecord(await proxyFetch(path, { headers: jsonHeaders }));
+    } else {
+      throw e;
+    }
+  }
+  const text = str(data.text) || str(data.representation);
+  const conclusions = Array.isArray(data.conclusions)
+    ? (data.conclusions as PeerRepresentation["conclusions"])
+    : [];
+  return { text, conclusions };
+}
+
+/**
+ * Dialectic peer chat. POST-JSON first (the Next proxy buffers the body, so
+ * true SSE is impossible through it). Renders `answer` plus any tool-trace
+ * array if the backend includes one (`tools`, `tool_trace`, or `trace`).
+ */
+export async function peerChat(
+  workspaceId: string,
+  req: ChatPlaygroundRequest
+): Promise<ChatPlaygroundResponse> {
+  // Mirror the backend observer/observed fallback client-side so the request
+  // is explicit even before the server fills blanks.
+  const observer = req.observer?.trim() || req.observed?.trim() || "";
+  const observed = req.observed?.trim() || req.observer?.trim() || "";
+  const body: Record<string, unknown> = {
+    query: req.query,
+    observer,
+    observed,
+    ...(req.session_id?.trim() ? { session_id: req.session_id.trim() } : {}),
+    reasoning_level: req.reasoning_level || "low",
+  };
+  const data = asRecord(
+    await proxyFetch(`/workspaces/${workspaceId}/chat`, {
+      method: "POST",
+      headers: jsonHeaders,
+      body: JSON.stringify(body),
+    })
+  );
+  const toolsRaw: unknown[] | null =
+    (Array.isArray(data.tools) && (data.tools as unknown[])) ||
+    (Array.isArray(data.tool_trace) && (data.tool_trace as unknown[])) ||
+    (Array.isArray(data.trace) && (data.trace as unknown[])) ||
+    null;
+  const tools: ChatToolTrace[] | undefined = toolsRaw
+    ? toolsRaw.map((t) => (typeof t === "object" && t !== null ? (t as ChatToolTrace) : { result: String(t) }))
+    : undefined;
+  return {
+    answer: str(data.answer),
+    observer: str(data.observer, observer) || undefined,
+    observed: str(data.observed, observed) || undefined,
+    tools,
+    raw: data,
+  };
+}

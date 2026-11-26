@@ -7,13 +7,15 @@ import { cn } from "@/lib/utils";
 import {
   LayoutDashboard, FolderKanban, Database, Search, MessageCircle,
   Boxes, Share2, BarChart3, Menu, X, Zap, Settings,
-  Network, Hourglass, GitBranch, Activity
+  Network, Hourglass, GitBranch, Activity, Users, MessagesSquare
 } from "lucide-react";
 
 const nav = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
   { href: "/dashboard/activity", label: "Activity", icon: Activity },
   { href: "/dashboard/workspaces", label: "Workspaces", icon: FolderKanban },
+  { href: "/dashboard/peers", label: "Peers", icon: Users },
+  { href: "/dashboard/chat", label: "Chat", icon: MessagesSquare },
   { href: "/dashboard/vault", label: "Vault", icon: Database },
   { href: "/dashboard/search", label: "Search", icon: Search },
   { href: "/dashboard/rag", label: "RAG", icon: MessageCircle },

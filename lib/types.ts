@@ -128,3 +128,53 @@ export interface ChromaGetResponse {
   embeddings: number[][];
   metadatas: Record<string, unknown>[];
 }
+
+// Peers + chat playground (P2)
+
+export interface Peer {
+  id: string;
+  name: string;
+  metadata?: Record<string, unknown>;
+}
+
+export type ReasoningLevel = "none" | "low" | "medium" | "high" | "max";
+
+export const REASONING_LEVELS: ReasoningLevel[] = ["none", "low", "medium", "high", "max"];
+
+export interface PeerCard {
+  peer_id: string;
+  lines: string[];
+}
+
+export interface PeerSessionInfo {
+  id: string;
+  raw: Record<string, unknown>;
+}
+
+export interface PeerRepresentation {
+  text: string;
+  conclusions: { id?: string; document?: string; content?: string; metadata?: Record<string, unknown> }[];
+}
+
+export interface ChatToolTrace {
+  tool?: string;
+  args?: Record<string, unknown>;
+  result?: string;
+  [key: string]: unknown;
+}
+
+export interface ChatPlaygroundResponse {
+  answer: string;
+  observer?: string;
+  observed?: string;
+  tools?: ChatToolTrace[];
+  raw: Record<string, unknown>;
+}
+
+export interface ChatPlaygroundRequest {
+  query: string;
+  observer?: string;
+  observed?: string;
+  session_id?: string;
+  reasoning_level?: ReasoningLevel;
+}
