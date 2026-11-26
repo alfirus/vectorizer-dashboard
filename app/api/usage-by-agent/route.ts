@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { checkAuth } from "@/lib/auth";
 
 const VECTORIZER_URL = process.env.VECTORIZER_URL || "http://localhost:8091";
-const API_KEY = process.env.VECTORIZER_API_KEY || "vectorizer-local-key";
+const API_KEY = process.env.VECTORIZER_API_KEY || "";
 
 export const dynamic = "force-dynamic";
 

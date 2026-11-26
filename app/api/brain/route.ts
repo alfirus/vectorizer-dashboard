@@ -3,11 +3,14 @@ import { checkAuth } from "@/lib/auth";
 const VECTORIZER_URL = process.env.VECTORIZER_URL || "http://vectorizer:8091";
 const LM_STUDIO_URL = (process.env.LM_STUDIO_URL || process.env.OAI_COMPATIBLE_URL || "http://host.docker.internal:1234/v1").replace(/\/+$/, "").replace(/\/v1$/, "");
 const LM_STUDIO_KEY = process.env.LM_STUDIO_KEY || process.env.LM_STUDIO_API_KEY || process.env.OAI_API_KEY || "";
-const API_KEY = process.env.VECTORIZER_API_KEY || "vectorizer-local-key";
+const API_KEY = process.env.VECTORIZER_API_KEY || "";
 
 const vHeaders = {
   "Content-Type": "application/json",
   "X-API-Key": API_KEY,
+  // P1-6 (R2 V3/C6): X-Agent: dashboard — brain search calls are
+  // usage-tracked and 400 without X-Agent under REQUIRE_X_AGENT=true.
+  "X-Agent": "dashboard",
 };
 
 export const runtime = "nodejs";
