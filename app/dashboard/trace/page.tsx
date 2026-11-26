@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { apiFetch } from "@/lib/auth";
 import { Network, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -32,7 +33,7 @@ export default function TracePage() {
     setLoading(true); setError(""); setNodes([]);
     try {
       const q = new URLSearchParams({ workspace_id: workspace.trim(), id: conclusionId.trim(), direction, depth: "5" });
-      const res = await fetch(`/api/vectorizer/conclusions/trace?${q}`);
+      const res = await apiFetch(`/api/vectorizer/conclusions/trace?${q}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Trace failed");
       setNodes(data.nodes || []);

@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { apiFetch } from "@/lib/auth";
 import { Settings as SettingsIcon, Save, Clock, Mail, Send, Shield, Database, Eye, EyeOff, RotateCw, Play, Pause } from "lucide-react";
 
 type Env = Record<string, string>;
@@ -23,10 +24,11 @@ export default function SettingsPage() {
   const load = async () => {
     setLoading(true);
     try {
-      const r = await fetch("/api/settings");
+      const r = await apiFetch("/api/settings");
       const d = await r.json();
-      setEnv(d.rawEnv || {});
-      setRaw(d.rawEnv || {});
+      // D2: the API returns masked secrets only — never raw values.
+      setEnv(d.env || {});
+      setRaw(d.env || {});
       setSched(d.schedules || {});
       setHint(d.hint || "");
     } finally { setLoading(false); }
@@ -37,7 +39,7 @@ export default function SettingsPage() {
     setSaving(true);
     try {
       const body: Record<string, string> = { ...env, schedules: JSON.stringify(sched) };
-      const r = await fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const r = await apiFetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       if (r.ok) { setSaved(true); setTimeout(() => setSaved(false), 2000); setRaw({ ...env }); }
       else alert("Save failed");
     } finally { setSaving(false); }
@@ -46,7 +48,7 @@ export default function SettingsPage() {
   const toggle = async (id: string, en: boolean) => {
     const next: Sched = { ...sched, [id]: { ...(sched[id] || { schedule: "" }), enabled: en } };
     setSched(next);
-    await fetch("/api/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: en ? "resume" : "pause", job: id }) });
+    await apiFetch("/api/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: en ? "resume" : "pause", job: id }) });
   };
 
   const dirty = JSON.stringify(env) !== JSON.stringify(raw);

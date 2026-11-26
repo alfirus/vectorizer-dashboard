@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { apiFetch } from "@/lib/auth";
 import { Hourglass, Loader2, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -27,7 +28,7 @@ export default function StalePage() {
     setLoading(true); setError(""); setItems([]);
     try {
       const q = new URLSearchParams({ workspace_id: workspace.trim(), max_age_days: maxAge, limit: "50" });
-      const res = await fetch(`/api/vectorizer/conclusions/stale?${q}`);
+      const res = await apiFetch(`/api/vectorizer/conclusions/stale?${q}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Scan failed");
       setItems(data.candidates || []);
@@ -39,7 +40,7 @@ export default function StalePage() {
   const forget = async (id: string) => {
     setDeleting(id);
     try {
-      const res = await fetch(`/api/vectorizer/messages/${encodeURIComponent(id)}?workspace_id=${encodeURIComponent(workspace.trim())}`, { method: "DELETE" });
+      const res = await apiFetch(`/api/vectorizer/messages/${encodeURIComponent(id)}?workspace_id=${encodeURIComponent(workspace.trim())}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Delete failed");
       setItems(prev => prev.filter(i => i.id !== id));
     } catch (e: unknown) {

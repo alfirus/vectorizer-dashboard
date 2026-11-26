@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { apiFetch } from "@/lib/auth";
 import { FolderOpen, RefreshCw, Search, Eye, Hash, FileText, Sparkles, ChevronDown } from "lucide-react";
 
 interface VaultFile { path: string; hash: string; chunks: number; mtime?: string; }
@@ -31,7 +32,7 @@ export default function VaultPage() {
   const openPreview = async (path: string) => {
     setPreviewLoading(true);
     try {
-      const r = await fetch(`/api/vault?action=file&path=${encodeURIComponent(path)}`);
+      const r = await apiFetch(`/api/vault?action=file&path=${encodeURIComponent(path)}`);
       const j = await r.json();
       if (r.ok) setPreview({ path: j.path, content: j.content, meta: j.meta || {} });
       else setPreview({ path, content: j.error || "Failed to load", meta: {} });
@@ -42,8 +43,8 @@ export default function VaultPage() {
     setLoading(true);
     try {
       const [sRes, lRes] = await Promise.all([
-        fetch("/api/vault?action=stats").then(r => r.json()),
-        fetch(`/api/vault?limit=${limit}&offset=${off}${q ? `&q=${encodeURIComponent(q)}` : ""}`).then(r => r.json()),
+        apiFetch("/api/vault?action=stats").then(r => r.json()),
+        apiFetch(`/api/vault?limit=${limit}&offset=${off}${q ? `&q=${encodeURIComponent(q)}` : ""}`).then(r => r.json()),
       ]);
       if (sRes.vault_available === false) { setStats(null); setFiles([]); setTotal(0); setLoading(false); return; }
       if (sRes.files !== undefined) setStats(sRes);
@@ -60,7 +61,7 @@ export default function VaultPage() {
     setReindexProgress({ phase: "starting", percent: 0, file: "", current: 0, total: 0, message: "Starting...", logs: [] });
 
     try {
-      const res = await fetch("/api/admin/reindex", {
+      const res = await apiFetch("/api/admin/reindex", {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
         body: JSON.stringify({ dryRun }),

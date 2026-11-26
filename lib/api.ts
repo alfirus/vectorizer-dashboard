@@ -14,6 +14,7 @@ import type {
   ApiKey,
   ActivityData,
 } from "./types";
+import { apiFetch } from "./auth";
 
 // All client-side calls go through the Next.js proxy (/api/vectorizer/*)
 // API key stays server-side — never exposed to the browser.
@@ -24,23 +25,23 @@ const CHROMA_PROXY = "/api/chroma";
 const jsonHeaders = { "Content-Type": "application/json" };
 
 export async function getHealth(): Promise<HealthResponse> {
-  const res = await fetch(`${PROXY}/health`);
+  const res = await apiFetch(`${PROXY}/health`);
   return res.json();
 }
 
 export async function getWorkspaces(): Promise<{ workspaces: Workspace[] }> {
-  const res = await fetch(`${PROXY}/workspaces`, { headers: jsonHeaders });
+  const res = await apiFetch(`${PROXY}/workspaces`, { headers: jsonHeaders });
   const data = await res.json();
 
   // Enrich with ChromaDB doc counts — GET /collections list has no count,
   // so fetch count per collection. Falls back to 0 on error.
   try {
-    const colRes = await fetch(`${CHROMA_PROXY}/api/v2/tenants/default_tenant/databases/default_database/collections`);
+    const colRes = await apiFetch(`${CHROMA_PROXY}/api/v2/tenants/default_tenant/databases/default_database/collections`);
     const cols = (await colRes.json()) as ChromaCollection[];
     const colMap: Record<string, number> = {};
     const countResults = await Promise.allSettled(
       cols.map(async (col) => {
-        const countRes = await fetch(`${CHROMA_PROXY}/api/v2/tenants/default_tenant/databases/default_database/collections/${col.id}/count`);
+        const countRes = await apiFetch(`${CHROMA_PROXY}/api/v2/tenants/default_tenant/databases/default_database/collections/${col.id}/count`);
         const n = await countRes.json().catch(() => 0);
         return { name: col.name, count: typeof n === "number" ? n : 0 };
       })
@@ -64,7 +65,7 @@ export async function getMessages(
 ) {
   const params = new URLSearchParams({ workspace_id: workspaceId, limit: String(limit), offset: String(offset) });
   if (sessionId) params.set("session_id", sessionId);
-  const res = await fetch(`${PROXY}/messages?${params}`, { headers: jsonHeaders });
+  const res = await apiFetch(`${PROXY}/messages?${params}`, { headers: jsonHeaders });
   const data = await res.json();
 
   // Normalize: API returns {document, metadata: {role, session_id, ...}}
@@ -93,7 +94,7 @@ export async function searchMessages(
   } else {
     const where: Record<string, unknown> = { workspace_id: workspaceId };
     if (hybrid) where.hybrid = true;
-    const res = await fetch(`${PROXY}/messages/search`, {
+    const res = await apiFetch(`${PROXY}/messages/search`, {
       method: "POST",
       headers: jsonHeaders,
       body: JSON.stringify({ query, n_results: nResults, where }),
@@ -120,7 +121,7 @@ export async function* brainAskStream(
   workspaceId?: string,
   hybrid = false
 ): AsyncGenerator<BrainStreamEvent> {
-  const res = await fetch("/api/brain", {
+  const res = await apiFetch("/api/brain", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ question, workspaceId, hybrid }),
@@ -182,7 +183,7 @@ export async function brainAsk(
   workspaceId?: string,
   hybrid = false
 ): Promise<BrainResponse> {
-  const res = await fetch(`/api/brain`, {
+  const res = await apiFetch(`/api/brain`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ question, workspaceId, hybrid }),
@@ -195,7 +196,7 @@ export async function brainAsk(
 }
 
 export async function createWorkspace(name: string): Promise<{ workspace: Workspace }> {
-  const res = await fetch(`${PROXY}/workspaces`, {
+  const res = await apiFetch(`${PROXY}/workspaces`, {
     method: "POST",
     headers: jsonHeaders,
     body: JSON.stringify({ name }),
@@ -205,7 +206,7 @@ export async function createWorkspace(name: string): Promise<{ workspace: Worksp
 }
 
 export async function deleteWorkspace(id: string): Promise<void> {
-  const res = await fetch(`${PROXY}/workspaces/${id}`, {
+  const res = await apiFetch(`${PROXY}/workspaces/${id}`, {
     method: "DELETE",
     headers: jsonHeaders,
   });
@@ -218,7 +219,7 @@ export async function addMessage(
   role: "user" | "assistant" | "system",
   content: string
 ): Promise<void> {
-  const res = await fetch(`${PROXY}/messages`, {
+  const res = await apiFetch(`${PROXY}/messages`, {
     method: "POST",
     headers: jsonHeaders,
     body: JSON.stringify({ workspace_id: workspaceId, session_id: sessionId, role, content }),
@@ -229,7 +230,7 @@ export async function addMessage(
 // ---- ChromaDB via proxy (keeps Chroma internal, no direct browser access) ----
 
 export async function getCollections(): Promise<ChromaCollection[]> {
-  const res = await fetch(
+  const res = await apiFetch(
     `${CHROMA_PROXY}/api/v2/tenants/default_tenant/databases/default_database/collections`
   );
   return res.json();
@@ -239,7 +240,7 @@ export async function getCollectionVectors(
   collectionId: string,
   limit = 500
 ): Promise<ChromaGetResponse> {
-  const res = await fetch(
+  const res = await apiFetch(
     `${CHROMA_PROXY}/api/v2/tenants/default_tenant/databases/default_database/collections/${collectionId}/get?limit=${limit}&include=embeddings,documents,metadatas`
   );
   return res.json();
@@ -257,7 +258,7 @@ export async function searchAllWorkspaces(
   // merge, and honest `source` labels — one call covers both modes, so no
   // client-side fan-out needed. Toggle-off intentionally omits the field and
   // still gets fused results via the server default.
-  const res = await fetch(`${PROXY}/messages/search/all`, {
+  const res = await apiFetch(`${PROXY}/messages/search/all`, {
     method: "POST",
     headers: jsonHeaders,
     body: JSON.stringify({ query, n_results: nResults, ...(hybrid ? { hybrid: true } : {}) }),
@@ -268,7 +269,7 @@ export async function searchAllWorkspaces(
 export async function getWorkspaceHealth(
   workspaceId: string
 ): Promise<WorkspaceHealth> {
-  const res = await fetch(
+  const res = await apiFetch(
     `${PROXY}/workspaces/${workspaceId}/health`,
     { headers: jsonHeaders }
   );
@@ -276,7 +277,7 @@ export async function getWorkspaceHealth(
 }
 
 export async function getSearchAnalytics(): Promise<SearchAnalytics> {
-  const res = await fetch(`${PROXY}/messages/analytics`, {
+  const res = await apiFetch(`${PROXY}/messages/analytics`, {
     headers: jsonHeaders,
   });
   return res.json();
@@ -291,7 +292,7 @@ export async function grepMessages(
 ): Promise<SearchResponse> {
   const params = new URLSearchParams({ workspace_id: workspaceId, q });
   if (sessionId) params.set("session_id", sessionId);
-  const res = await fetch(`${PROXY}/messages/grep?${params}`, { headers: jsonHeaders });
+  const res = await apiFetch(`${PROXY}/messages/grep?${params}`, { headers: jsonHeaders });
   const data = await res.json();
   const results: SearchResult[] = (data.results || data.messages || []).map((m: Record<string, unknown>) => ({
     id: String(m.id || ""),
@@ -314,7 +315,7 @@ export async function temporalSearch(
   if (after) params.set("after", after);
   if (before) params.set("before", before);
   if (sessionId) params.set("session_id", sessionId);
-  const res = await fetch(`${PROXY}/messages/temporal?${params}`, { headers: jsonHeaders });
+  const res = await apiFetch(`${PROXY}/messages/temporal?${params}`, { headers: jsonHeaders });
   const data = await res.json();
   const results: SearchResult[] = (data.results || []).map((m: Record<string, unknown>) => ({
     id: String(m.id || ""),
@@ -350,23 +351,23 @@ function parseMetrics(text: string): Metrics {
 }
 
 export async function getMetrics(): Promise<Metrics> {
-  const res = await fetch(`${PROXY}/metrics`);
+  const res = await apiFetch(`${PROXY}/metrics`);
   const text = await res.text();
   return parseMetrics(text);
 }
 
 export async function getSessions(): Promise<{ sessions: Session[] }> {
-  const res = await fetch(`${PROXY}/sessions`, { headers: jsonHeaders });
+  const res = await apiFetch(`${PROXY}/sessions`, { headers: jsonHeaders });
   return res.json();
 }
 
 export async function getWebhooks(): Promise<{ webhooks: Webhook[] }> {
-  const res = await fetch(`${PROXY}/webhooks`, { headers: jsonHeaders });
+  const res = await apiFetch(`${PROXY}/webhooks`, { headers: jsonHeaders });
   return res.json();
 }
 
 export async function getApiKeys(): Promise<{ keys: ApiKey[] }> {
-  const res = await fetch(`${PROXY}/keys`, { headers: jsonHeaders });
+  const res = await apiFetch(`${PROXY}/keys`, { headers: jsonHeaders });
   return res.json();
 }
 
@@ -398,7 +399,7 @@ export async function getRecentMessages(limit = 20): Promise<{ messages: import(
 export async function getActivity(): Promise<ActivityData> {
   const [health, metricsText, workspacesData, sessionsData, webhooksData, keysData] = await Promise.all([
     getHealth(),
-    fetch(`${PROXY}/metrics`).then(r => r.text()),
+    apiFetch(`${PROXY}/metrics`).then(r => r.text()),
     getWorkspaces(),
     getSessions().catch(() => ({ sessions: [] as Session[] })),
     getWebhooks().catch(() => ({ webhooks: [] as Webhook[] })),
