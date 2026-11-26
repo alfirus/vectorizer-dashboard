@@ -14,15 +14,44 @@ const execFileAsync = promisify(execFile);
 const VAULT_ROOT = process.env.VAULT_ROOT || "/data/ai";
 const PY = process.env.REINDEX_PYTHON || "python3";
 
-function getScripts() {
-  const candidates = [
-    `${VAULT_ROOT}/maisarah/vault/00-index/vault_index.py`,
-    "C:/Users/alfir/SynologyDrive/ai/maisarah/vault/00-index/vault_index.py",
-  ];
-  const graphCandidates = [
-    `${VAULT_ROOT}/maisarah/vault/00-index/graph_build.py`,
-    "C:/Users/alfir/SynologyDrive/ai/maisarah/vault/00-index/graph_build.py",
-  ];
+// Explicit mirror of vectorizer models.ValidateResourceName for this field:
+// alphanumerics, dash, underscore only, max 64 chars. Applied to the
+// resolved workspace in BOTH JSON and SSE paths before any spawn.
+const VALID_WS = /^[a-zA-Z0-9_-]+$/;
+const MAX_WS_LEN = 64;
+
+function isValidWorkspace(ws: unknown): ws is string {
+  return (
+    typeof ws === "string" &&
+    ws.length > 0 &&
+    ws.length <= MAX_WS_LEN &&
+    VALID_WS.test(ws)
+  );
+}
+
+function getScripts(workspace?: string) {
+  // Workspace-parameterized candidates first. Paths are only ever
+  // synthesized from validated input (see isValidWorkspace); callers must
+  // validate before passing an untrusted value in.
+  const ws = isValidWorkspace(workspace) ? workspace : undefined;
+  const candidates = ws
+    ? [`${VAULT_ROOT}/${ws}/vault/00-index/vault_index.py`]
+    : [];
+  const graphCandidates = ws
+    ? [`${VAULT_ROOT}/${ws}/vault/00-index/graph_build.py`]
+    : [];
+  // Legacy fallback: pre-parameterized locations, used only when no
+  // workspace was given or it is one of the legacy names.
+  if (!ws || ws === "maisarah" || ws === "family") {
+    candidates.push(
+      `${VAULT_ROOT}/maisarah/vault/00-index/vault_index.py`,
+      "C:/Users/alfir/SynologyDrive/ai/maisarah/vault/00-index/vault_index.py",
+    );
+    graphCandidates.push(
+      `${VAULT_ROOT}/maisarah/vault/00-index/graph_build.py`,
+      "C:/Users/alfir/SynologyDrive/ai/maisarah/vault/00-index/graph_build.py",
+    );
+  }
   const vault = candidates.find((p) => existsSync(p)) || candidates[0];
   const graph = graphCandidates.find((p) => existsSync(p)) || graphCandidates[0];
   return { vault, graph };
@@ -37,9 +66,14 @@ export async function POST(request: Request) {
   const dryRun = body.dryRun === true;
   const limit = typeof body.limit === "number" ? body.limit : undefined;
   const forceReindex = body.reindex === true;
-  const workspace = (typeof body.workspace === "string" ? body.workspace : queryWorkspace) || undefined;
+  const rawWorkspace = (typeof body.workspace === "string" ? body.workspace : queryWorkspace) || undefined;
+  // Validate before any spawn or path synthesis (covers JSON and SSE paths).
+  if (rawWorkspace !== undefined && !isValidWorkspace(rawWorkspace)) {
+    return NextResponse.json({ ok: false, error: "invalid workspace" }, { status: 400 });
+  }
+  const workspace = rawWorkspace;
 
-  const { vault, graph } = getScripts();
+  const { vault, graph } = getScripts(workspace);
 
   if (!existsSync(vault)) {
     return NextResponse.json(
@@ -74,6 +108,9 @@ export async function POST(request: Request) {
     let graphErr = "";
     if (!dryRun && existsSync(graph)) {
       try {
+        // NOTE: graph_build.py accepts no CLI args (no argparse; vault path
+        // hardcoded to maisarah inside the script), so it is invoked bare.
+        // Passing --workspace belongs in the Python script — out of scope.
         const g = await execFileAsync(PY, [graph], { timeout: 60_000, maxBuffer: 2 * 1024 * 1024 });
         graphOut = g.stdout.slice(0, 4000);
         graphErr = g.stderr.slice(0, 2000);
@@ -182,6 +219,7 @@ function streamReindex(
           send("phase", { phase: "graph", message: "Rebuilding knowledge graph..." });
           send("progress", { phase: "graph", percent: -1, message: "Building graph..." });
 
+          // NOTE: graph_build.py accepts no CLI args (see JSON path above).
           await runScript(PY, [graph], 60_000, (line) => {
             if (aborted) return;
             send("log", { message: line });
