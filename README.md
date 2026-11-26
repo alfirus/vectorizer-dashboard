@@ -1,5 +1,10 @@
 # Vectorizer Dashboard
 
+[![CI](https://github.com/alfirus/vectorizer-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/alfirus/vectorizer-dashboard/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/tag/alfirus/vectorizer-dashboard)](https://github.com/alfirus/vectorizer-dashboard/tags)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Vectorizer](https://img.shields.io/badge/vectorizer-v0.4.0%2B-blue)](https://github.com/alfirus/vectorizer)
+
 Next.js 14 + Tailwind — ops UI for [Vectorizer](../vectorizer) (semantic memory) + ChromaDB + Vault. Server-only secrets, mobile-first, Tailscale-ready.
 
 ## Live
@@ -26,18 +31,20 @@ Next.js 14 + Tailwind — ops UI for [Vectorizer](../vectorizer) (semantic memor
 | Route | What | Key details |
 |-------|------|-------------|
 | `/dashboard` | Overview | Health, vault stats, workspace proportions |
+| `/dashboard/activity` | Activity | Usage, writeback queue, per-action mix |
 | `/dashboard/workspaces` | Workspaces | Document counts, create/delete |
 | `/dashboard/vault` | Vault explorer | File grid, dry-run, reindex with SSE progress bar |
 | `/dashboard/search` | Semantic search | Workspace filter, hybrid toggle (matters for single-workspace; search-all fuses server-side by default), highlight + copy |
 | `/dashboard/rag` | Ask RAG | Streaming LLM, source citations |
 | `/dashboard/embeddings` | Embeddings | Dimension + sample vectors |
 | `/dashboard/graph` | Knowledge graph | Force graph, BFS neighbors |
-| `/dashboard/analytics` | Analytics | Latency bars, doc distribution |
-| `/dashboard/activity` | Activity | Usage, writeback queue, per-action mix |
 | `/dashboard/trace` | Trace | Reasoning-chain timeline, forward/reverse |
 | `/dashboard/stale` | Stale | Dead-knowledge proposals with per-item forget |
-| `/dashboard/code` | Code | Who-calls-X with click-through chaining |
+| `/dashboard/code` | Code | Who-calls-X chaining |
+| `/dashboard/analytics` | Analytics | Latency bars, doc distribution |
 | `/dashboard/settings` | Settings | Cron desired-state, Telegram, SMTP, retention |
+
+(Sidebar order — `components/Sidebar.tsx` is the source of truth; all 13 ship in the drawer + bottom tabs.)
 
 ## Stack & Ports
 
@@ -45,6 +52,47 @@ Next.js 14 + Tailwind — ops UI for [Vectorizer](../vectorizer) (semantic memor
 - **Proxies** (server-only keys): `app/api/vectorizer/[...path]` → `http://vectorizer:8091/api/v1/*` (+ `X-API-Key`), `app/api/chroma/[...path]` → Chroma `8000/api/v2/*`, `app/api/brain` → Vectorizer search + LM Studio, `app/api/vault|graph|settings|admin/reindex`
 - **Ports:** Vectorizer `8091`, Chroma `8100` (local) / `8102` (server), LM Studio `1234`, Dashboard `8092`
 - **Docker:** `vectorizer:8091` inside, `host.docker.internal:1234` for LM Studio
+
+## Architecture
+
+```mermaid
+flowchart LR
+    U["Browser (mobile-first)"] -->|"pages :8092"| N["Next.js 14 App Router"]
+    N -->|"server-only /api/*<br/>Bearer gate (fail-closed 503)"| P["Proxy routes"]
+    P -->|"GET/POST allowlist<br/>+ X-Agent: dashboard"| V["Vectorizer :8091/api/v1"]
+    P -->|"read-only allowlist"| C["ChromaDB :8000/api/v2"]
+    P -->|"search + stream"| L["LM Studio :1234/v1<br/>(RAG + synth fallback)"]
+    P -->|"stats/tree/graph"| F["Vault files<br/>(GRAPH.json + MEMORY_INDEX.json)"]
+    P -->|"read/write managed keys"| E["Vectorizer .env<br/>(SETTINGS_ENV_PATH mount)"]
+```
+
+Secrets never reach the browser: every `/api/*` route reads tokens from
+server `process.env` and forwards them. The dashboard holds no vectorizer
+state of its own — it is a lens over the API above (contract:
+`docs/adr/0001-dashboard-vectorizer-contract.md`).
+
+## API in Action
+
+Same bearer token for every call (`DASHBOARD_AUTH_TOKEN`); the UI uses
+these exact routes:
+
+```bash
+export D=http://localhost:8092
+export T="$DASHBOARD_AUTH_TOKEN"
+
+# Vectorizer health through the proxy (adds X-Agent: dashboard server-side)
+curl -s -H "Authorization: Bearer $T" $D/api/vectorizer/health | jq '{status, chromadb}'
+# {"status":"ok","chromadb":"ok"}
+
+# Search analytics (the dashboard chart source)
+curl -s -H "Authorization: Bearer $T" $D/api/vectorizer/messages/analytics | jq .
+
+# Effective settings (managed keys from the server .env, secrets masked)
+curl -s -H "Authorization: Bearer $T" $D/api/settings | jq '{env, schedules}'
+```
+
+Without the token every `/api/*` answers `401` — and when the token is
+unset server-side, `503` (fail-closed, never an open proxy).
 
 ## Quick Start
 
@@ -264,7 +312,7 @@ Content-Type: application/json
 
 - `app/layout.tsx` `viewport: device-width`
 - `Shell` = `flex-col` on mobile (header `56px` full-bleed) + `lg:flex-row` (sidebar `240px`)
-- `Sidebar` = top bar + 5-item bottom tabs (`safe-bottom`) + drawer `300px slideIn` with all 8 pages + Settings
+- `Sidebar` = top bar + 5-item bottom tabs (`safe-bottom`) + drawer `300px slideIn` with all 13 pages (Overview, Activity, Workspaces, Vault, Search, RAG, Embeddings, Graph, Trace, Stale, Code, Analytics, Settings)
 - `globals.css` `input min-h 44px, button min-h 44px, font 16px` to avoid iOS zoom
 - `StatCard` + pages use `rounded-2xl shadow-card` + `grid-cols-1 lg:grid-cols-2` responsive
 
@@ -311,4 +359,4 @@ vectorizer-dashboard/
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).
