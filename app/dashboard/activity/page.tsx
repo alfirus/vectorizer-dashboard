@@ -198,7 +198,7 @@ export default function ActivityPage() {
       </div>
 
       {/* Daily Usage By Agent */}
-      <div className="bg-card border border-border rounded-2xl p-4 shadow-card">
+      <div className="bg-card border border-border rounded-2xl p-4 shadow-card chart-theme">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-semibold flex items-center gap-2">
             <Activity className="w-4 h-4 text-muted" /> Daily Usage By Agent
@@ -209,7 +209,7 @@ export default function ActivityPage() {
               <button
                 key={d}
                 onClick={() => setUsageDays(d)}
-                className={`px-2.5 py-1 rounded-lg font-medium transition-colors ${usageDays === d ? "bg-primary text-white" : "bg-surface text-muted hover:text-foreground"}`}
+                className={`min-h-[44px] inline-flex items-center px-2.5 py-1 rounded-lg font-medium transition-colors ${usageDays === d ? "bg-primary text-white" : "bg-surface text-muted hover:text-foreground"}`}
               >
                 {d}D
               </button>
@@ -308,7 +308,7 @@ export default function ActivityPage() {
 
       {/* Workspace Chart + Role Distribution */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-        <div className="lg:col-span-2 bg-card border border-border rounded-2xl p-4 shadow-card">
+        <div className="lg:col-span-2 bg-card border border-border rounded-2xl p-4 shadow-card chart-theme">
           <h2 className="text-sm font-semibold flex items-center gap-2 mb-3">
             <Database className="w-4 h-4 text-muted" /> Workspaces
             <span className="text-xs font-normal text-muted">({ws.length} total)</span>

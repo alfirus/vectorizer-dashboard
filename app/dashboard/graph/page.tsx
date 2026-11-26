@@ -77,8 +77,9 @@ export default function GraphPage() {
     setLoading(true);
     const url = workspace ? `/api/graph?workspace=${workspace}` : "/api/graph";
     fetch(url)
-      .then((r) => r.json())
+      .then((r) => { if (!r.ok) throw new Error(`Graph API: ${r.status}`); return r.json(); })
       .then((data: GraphData & { workspaces?: string[] }) => {
+        if (!data || !Array.isArray(data.nodes) || !Array.isArray(data.edges)) throw new Error("Graph API: bad shape");
         setGraph(data);
         if (data.workspaces) setWorkspaces(data.workspaces);
         // Initialize positions randomly
@@ -328,7 +329,7 @@ export default function GraphPage() {
         Force-directed visualization of Vectorizer&apos;s GRAPH.json — {stats?.total || 0} nodes, {stats?.edges || 0} edges
       </p>
 
-      <div className="flex items-center gap-4">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
         <label className="text-sm text-muted">Filter:</label>
         <select
           value={filter}
@@ -347,7 +348,7 @@ export default function GraphPage() {
           <div className="flex gap-1">
             <button
               onClick={() => setWorkspace("")}
-              className={`px-2 py-1 text-xs rounded ${!workspace ? "bg-primary text-white" : "bg-surface border border-border text-muted hover:text-white"}`}
+              className={`min-h-[44px] inline-flex items-center px-2 py-1 text-xs rounded ${!workspace ? "bg-primary text-white" : "bg-surface border border-border text-muted hover:text-foreground dark:hover:text-white"}`}
             >
               All
             </button>
@@ -355,7 +356,7 @@ export default function GraphPage() {
               <button
                 key={ws}
                 onClick={() => setWorkspace(ws)}
-                className={`px-2 py-1 text-xs rounded capitalize ${workspace === ws ? "bg-primary text-white" : "bg-surface border border-border text-muted hover:text-white"}`}
+                className={`min-h-[44px] inline-flex items-center px-2 py-1 text-xs rounded capitalize ${workspace === ws ? "bg-primary text-white" : "bg-surface border border-border text-muted hover:text-foreground dark:hover:text-white"}`}
               >
                 {ws}
               </button>

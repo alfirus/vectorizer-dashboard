@@ -147,7 +147,7 @@ export default function EmbeddingsPage() {
         message.
       </p>
 
-      <div className="flex items-center gap-4">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
         <label className="text-sm text-muted">Collection:</label>
         <select
           value={selected}
@@ -188,7 +188,7 @@ export default function EmbeddingsPage() {
         <div className="bg-card border border-border rounded-2xl shadow-card p-4 overflow-x-auto">
           <svg
             viewBox={`0 0 ${svgW} ${svgH}`}
-            className="w-full"
+            className="w-full emb-grid"
             style={{ minWidth: 600 }}
           >
             {/* Grid lines */}

@@ -4,16 +4,18 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
+import { ThemeToggle } from "./ThemeToggle";
 import {
   LayoutDashboard, FolderKanban, Database, Search, MessageCircle,
   Boxes, Share2, BarChart3, Menu, X, Zap, Settings,
-  Network, Hourglass, GitBranch, Activity
+  Network, Hourglass, GitBranch, Activity, KeyRound
 } from "lucide-react";
 
 const nav = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
   { href: "/dashboard/activity", label: "Activity", icon: Activity },
   { href: "/dashboard/workspaces", label: "Workspaces", icon: FolderKanban },
+  { href: "/dashboard/scopes", label: "Scopes", icon: KeyRound },
   { href: "/dashboard/vault", label: "Vault", icon: Database },
   { href: "/dashboard/search", label: "Search", icon: Search },
   { href: "/dashboard/rag", label: "RAG", icon: MessageCircle },
@@ -51,13 +53,16 @@ export function Sidebar() {
       {/* Mobile top bar */}
       <header className="lg:hidden sticky top-0 z-30 flex items-center justify-between px-4 h-[56px] bg-card/80 backdrop-blur-xl border-b border-border">
         <Brand sm />
-        <button
-          onClick={() => setOpen(true)}
-          className="w-9 h-9 rounded-xl bg-surface border border-border flex items-center justify-center active:scale-95 transition-transform"
-          aria-label="Open menu"
-        >
-          <Menu className="w-[18px] h-[18px] text-muted-2" />
-        </button>
+        <div className="flex items-center gap-2">
+          <ThemeToggle />
+          <button
+            onClick={() => setOpen(true)}
+            className="w-11 h-11 rounded-xl bg-surface border border-border flex items-center justify-center active:scale-95 transition-transform"
+            aria-label="Open menu"
+          >
+            <Menu className="w-[18px] h-[18px] text-muted-2" />
+          </button>
+        </div>
       </header>
 
       {/* Desktop sidebar */}
@@ -90,9 +95,12 @@ export function Sidebar() {
           })}
         </nav>
         <div className="p-3 border-t border-border">
-          <div className="rounded-xl bg-surface border border-border p-3">
-            <div className="text-xs font-semibold">68 files · 1201 chunks</div>
-            <div className="text-[11px] text-muted mt-0.5">Vault indexed</div>
+          <div className="flex items-center gap-2">
+            <div className="flex-1 rounded-xl bg-surface border border-border p-3">
+              <div className="text-xs font-semibold">68 files · 1201 chunks</div>
+              <div className="text-[11px] text-muted mt-0.5">Vault indexed</div>
+            </div>
+            <ThemeToggle />
           </div>
         </div>
       </aside>
@@ -106,7 +114,7 @@ export function Sidebar() {
               key={item.href}
               href={item.href}
               className={cn(
-                "flex flex-col items-center gap-0.5 px-2 py-1 rounded-xl text-[10px] font-medium min-w-[56px]",
+                "flex flex-col items-center justify-center gap-0.5 px-2 py-1 rounded-xl text-[10px] font-medium min-w-[56px] min-h-[44px]",
                 isActive ? "text-primary" : "text-muted"
               )}
             >
@@ -117,7 +125,7 @@ export function Sidebar() {
         })}
         <button
           onClick={() => setOpen(true)}
-          className="flex flex-col items-center gap-0.5 px-2 py-1 rounded-xl text-[10px] font-medium text-muted min-w-[56px]"
+          className="flex flex-col items-center justify-center gap-0.5 px-2 py-1 rounded-xl text-[10px] font-medium text-muted min-w-[56px] min-h-[44px]"
         >
           <Menu className="w-5 h-5" />
           <span className="leading-none">More</span>
@@ -131,12 +139,16 @@ export function Sidebar() {
           <div className="w-[300px] bg-card border-l border-border flex flex-col animate-slideIn">
             <div className="flex items-center justify-between px-4 h-[56px] border-b border-border shrink-0">
               <Brand sm />
-              <button
-                onClick={() => setOpen(false)}
-                className="w-8 h-8 rounded-xl bg-surface border border-border flex items-center justify-center"
-              >
-                <X className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-2">
+                <ThemeToggle />
+                <button
+                  onClick={() => setOpen(false)}
+                  aria-label="Close menu"
+                  className="w-11 h-11 rounded-xl bg-surface border border-border flex items-center justify-center"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
             <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
               {nav.map((item) => {

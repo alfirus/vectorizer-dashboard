@@ -25,6 +25,7 @@ const jsonHeaders = { "Content-Type": "application/json" };
 
 export async function getHealth(): Promise<HealthResponse> {
   const res = await fetch(`${PROXY}/health`);
+  if (!res.ok) throw new Error(`Vectorizer unreachable: ${res.status}`);
   return res.json();
 }
 
@@ -232,6 +233,7 @@ export async function getCollections(): Promise<ChromaCollection[]> {
   const res = await fetch(
     `${CHROMA_PROXY}/api/v2/tenants/default_tenant/databases/default_database/collections`
   );
+  if (!res.ok) throw new Error(`ChromaDB unreachable: ${res.status}`);
   return res.json();
 }
 

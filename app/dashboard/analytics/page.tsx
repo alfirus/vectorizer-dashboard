@@ -29,13 +29,13 @@ export default function AnalyticsPage() {
     <div className="space-y-4 animate-fadeIn">
       <h1 className="text-xl font-bold tracking-tight flex items-center gap-2"><BarChart3 className="w-5 h-5 text-primary" /> Analytics</h1>
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="bg-card border border-border rounded-2xl p-4 text-center shadow-card"><div className="text-2xl font-bold">{analytics?.total_workspaces || 0}</div><div className="text-xs text-muted">Workspaces</div></div>
         <div className="bg-card border border-border rounded-2xl p-4 text-center shadow-card"><div className="text-2xl font-bold">{totalDocs.toLocaleString()}</div><div className="text-xs text-muted">Documents</div></div>
         <div className="bg-card border border-border rounded-2xl p-4 text-center shadow-card"><div className="text-2xl font-bold">{wsData.length ? Math.round(totalDocs / wsData.length) : 0}</div><div className="text-xs text-muted">Avg / WS</div></div>
       </div>
 
-      <div className="bg-card border border-border rounded-2xl p-4 shadow-card">
+      <div className="bg-card border border-border rounded-2xl p-4 shadow-card chart-theme">
         <h2 className="text-sm font-semibold flex items-center gap-2 mb-3"><Layers className="w-4 h-4 text-muted" /> Documents by Workspace</h2>
         {wsData.length === 0 ? <p className="text-sm text-muted text-center py-6">No data.</p> : (
           <ResponsiveContainer width="100%" height={200}>
@@ -50,7 +50,7 @@ export default function AnalyticsPage() {
         )}
       </div>
 
-      <div className="bg-card border border-border rounded-2xl p-4 shadow-card">
+      <div className="bg-card border border-border rounded-2xl p-4 shadow-card chart-theme">
         <h2 className="text-sm font-semibold flex items-center gap-2 mb-3"><BarChart3 className="w-4 h-4 text-muted" /> Proportion</h2>
         <ResponsiveContainer width="100%" height={220}>
           <PieChart>
@@ -62,7 +62,7 @@ export default function AnalyticsPage() {
         </ResponsiveContainer>
       </div>
 
-      <div className="bg-card border border-border rounded-2xl p-4 shadow-card">
+      <div className="bg-card border border-border rounded-2xl p-4 shadow-card chart-theme">
         <h2 className="text-sm font-semibold flex items-center gap-2 mb-2"><TrendingUp className="w-4 h-4 text-muted" /> Search latency <span className="text-xs font-normal text-muted">last 10 · ms</span></h2>
         {sparklines.length === 0 ? <p className="text-sm text-muted py-4 text-center">Search something first — latency will appear here.</p> : (
           <>
