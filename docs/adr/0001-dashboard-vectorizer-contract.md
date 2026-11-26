@@ -1,8 +1,9 @@
 # ADR 0001: Dashboard ↔ Vectorizer contract
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-11-26
 **Authors:** Lina (Tech Lead, card t_8304a3c1)
+**Accepted by:** Maisarah (Engineering Manager), 2026-11-26 — P1 batch review (kanban t_8304a3c1)
 
 ---
 
