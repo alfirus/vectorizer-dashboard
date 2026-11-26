@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { checkAuth } from "@/lib/auth";
 
 const VECTORIZER_URL = process.env.VECTORIZER_URL || "http://localhost:8091";
-const API_KEY = process.env.VECTORIZER_API_KEY || "vectorizer-local-key";
+const API_KEY = process.env.VECTORIZER_API_KEY || "";
 
 export const runtime = "nodejs";
 
@@ -77,6 +77,10 @@ async function proxyRequest(req: NextRequest, path: string[]) {
     "Content-Type": req.headers.get("content-type") || "application/json",
     "X-API-Key": API_KEY,
     "X-Source": "dashboard",
+    // P1-6 (R2 V3/C6): the generic proxy must identify as X-Agent: dashboard
+    // like the usage routes — under REQUIRE_X_AGENT=true every usage-tracked
+    // call without X-Agent gets 400, which broke all ordinary dashboard pages.
+    "X-Agent": "dashboard",
   };
 
   const init: RequestInit = {

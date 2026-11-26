@@ -2,12 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { checkAuth } from "@/lib/auth";
 
 const VECTORIZER_URL = process.env.VECTORIZER_URL || "http://localhost:8091";
-const API_KEY = process.env.VECTORIZER_API_KEY || "vectorizer-local-key";
+const API_KEY = process.env.VECTORIZER_API_KEY || "";
 
 const headers = {
   "Content-Type": "application/json",
   "X-API-Key": API_KEY,
   "X-Source": "dashboard",
+  // P1-6 (R2 V3/C6): X-Agent: dashboard — activity reads /usage + /metrics,
+  // which are usage-tracked and 400 without X-Agent under REQUIRE_X_AGENT=true.
+  "X-Agent": "dashboard",
 };
 
 async function fetchJSON<T>(path: string): Promise<T> {

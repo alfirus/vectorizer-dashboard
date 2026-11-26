@@ -2,3 +2,5 @@ node_modules/
 .next/
 .env
 .env.local
+# Generated type-incremental cache (build artifact, never commit).
+tsconfig.tsbuildinfo
