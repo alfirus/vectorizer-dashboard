@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev -p 8092",
     "build": "next build",
-    "start": "next start -p 8092"
+    "start": "next start -p 8092",
+    "type-check": "tsc --noEmit"
   },
   "dependencies": {
     "@tailwindcss/typography": "^0.5.20",
